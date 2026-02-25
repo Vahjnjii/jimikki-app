@@ -43,7 +43,7 @@
         import { createRoot } from "react-dom/client";
         import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LineChart, Line, PieChart, Pie, Cell } from "recharts";
 
-        // --- PASTE YOUR CODE STARTING HERE ---
+        // --- PASTE YOUR CODE STARTING HERE -------
         
         const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,6);
         const fmt = n => `₹${Math.max(0,+n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
