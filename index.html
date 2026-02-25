@@ -7,44 +7,41 @@
     <style>
         body { margin: 0; padding: 0; background: #F4F6FB; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        #root { min-height: 100vh; }
+        .loading { display: flex; justify-content: center; align-items: center; height: 100vh; color: #666; font-family: sans-serif; }
     </style>
-    <!-- Import Map: Tells browser where to find React and Recharts -->
+    <!-- Import Map: Defines where to download React and Recharts -->
     <script type="importmap">
     {
       "imports": {
         "react": "https://esm.sh/react@18.2.0",
         "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
-        "recharts": "https://esm.sh/recharts@2.12.0?external=react,react-dom"
+        "recharts": "https://esm.sh/recharts@2.12.7?external=react,react-dom"
       }
     }
     </script>
-    <!-- Polyfill for Babel (to read JSX) -->
+    <!-- Babel compiler to interpret JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
 <body>
-    <div id="root"></div>
+    <div id="root"><div class="loading">Loading App...</div></div>
 
-    <script type="text/javascript">
-        // 1. Polyfill window.storage to use LocalStorage
-        // Your code uses a custom 'window.storage', so we map it to browser localStorage
+    <!-- Storage Polyfill -->
+    <script>
         window.storage = {
-            get: async (key) => {
-                const val = localStorage.getItem(key);
-                return val ? { value: val } : null;
-            },
-            set: async (key, value) => {
-                localStorage.setItem(key, value);
-            }
+            get: async (key) => { const v = localStorage.getItem(key); return v ? { value: v } : null; },
+            set: async (key, value) => { localStorage.setItem(key, value); }
         };
     </script>
 
+    <!-- MAIN APP SCRIPT -->
     <script type="text/babel" data-type="module">
         import React, { useState, useEffect, useRef } from "react";
         import { createRoot } from "react-dom/client";
         import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LineChart, Line, PieChart, Pie, Cell } from "recharts";
 
-        // --- PASTE YOUR CODE STARTING HERE -------
-        
+        // --- FIXED APP CODE BELOW ---
+
         const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,6);
         const fmt = n => `₹${Math.max(0,+n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
         const fmtS = n => { const v=Math.max(0,+n||0); return v>=100000?`₹${(v/100000).toFixed(1)}L`:v>=1000?`₹${(v/1000).toFixed(1)}K`:`₹${v.toFixed(0)}`; };
@@ -66,7 +63,6 @@
           accentBg:'#EEF2FF', greenBg:'#ECFDF5', redBg:'#FFF1F2',
         };
 
-        // Generate last N months as [{label, key}]
         function lastNMonths(n) {
           const now = new Date();
           return Array.from({length:n},(_,i)=>{
@@ -88,7 +84,6 @@
             if (period === 'month') { const m = new Date(now); m.setDate(m.getDate()-29); return d >= m; }
             if (period === 'year') return t.date.startsWith(String(now.getFullYear()));
             if (period === '5year') return d.getFullYear() >= now.getFullYear()-4;
-            // month key like "2025-03"
             if (/^\d{4}-\d{2}$/.test(period)) return t.date.startsWith(period);
             return true;
           });
@@ -133,6 +128,7 @@
           </select>
         );
 
+        // CHANGED: Removed 'export default' keyword here
         function Jimikki() {
           const [view, setView] = useState('home');
           const [sidebar, setSidebar] = useState(false);
@@ -170,13 +166,12 @@
           const [aMetric, setAMetric] = useState('spending');
           const [aChartType, setAChartType] = useState('bar');
 
-          // Bucket time filter (for buckets view)
           const [bktPeriod, setBktPeriod] = useState('month');
 
           // Deep Research
           const [deepMode, setDeepMode] = useState(false);
           const [drMetric, setDrMetric] = useState('spending');
-          const [drBucket, setDrBucket] = useState(null); // null = all
+          const [drBucket, setDrBucket] = useState(null);
           const [drHolder, setDrHolder] = useState(null);
           const [drMonths, setDrMonths] = useState(6);
           const [drCompareA, setDrCompareA] = useState('');
@@ -342,7 +337,6 @@
             pop('Bucket removed');
           }
 
-          // Chart data builders
           function buildChartData(fH, period, metric) {
             const now = new Date();
             const base = actT.filter(t=>t.type!=='swap'&&(!fH||t.holderId===fH));
@@ -381,7 +375,6 @@
           const metricColor = m=>m==='income'?C.green:m==='spending'?C.red:C.accent;
           const metricLabel = m=>m==='income'?'Income':m==='spending'?'Spending':'Net Savings';
 
-          // Bucket stats filtered by period
           function bucketStats(period){
             const base = periodFilter(
               actT.filter(t=>t.type==='spending'&&(!aHFilter||t.holderId===aHFilter)),
@@ -391,7 +384,6 @@
               .filter(b=>b.total>0).sort((a,b2)=>b2.total-a.total);
           }
 
-          // Analytics chart
           const aMetricColor = aMetric==='income'?C.green:aMetric==='spending'?C.red:C.accent;
 
           function buildAChartData(){
@@ -429,7 +421,6 @@
             return Array.from({length:5},(_,i)=>{const yr=now.getFullYear()-4+i;return {name:String(yr),Value:val(base.filter(t=>t.date.startsWith(String(yr))))};});
           }
 
-          // ── Deep Research data builder ──
           function buildDRData() {
             const months = lastNMonths(drMonths);
             const base = actT.filter(t=>
@@ -454,7 +445,6 @@
             }));
           }
 
-          // Month comparison for DR
           function getDRCompareStats(monthKey, metric) {
             const base = actT.filter(t=>
               t.type!=='swap' &&
@@ -469,7 +459,6 @@
             return Math.max(0,inc-spd);
           }
 
-          // DR bucket breakdown for a month
           function getDRBucketBreakdown(monthKey) {
             return buckets.map(b=>{
               const total = actT.filter(t=>
@@ -576,7 +565,6 @@
                 </div>
               )}
 
-              {/* FAB Sheet */}
               {fabOpen&&(
                 <div style={{position:'fixed',inset:0,zIndex:300,display:'flex',flexDirection:'column',justifyContent:'flex-end'}}>
                   <div style={{position:'absolute',inset:0,background:'rgba(15,18,40,0.5)',backdropFilter:'blur(6px)'}} onClick={()=>{setFabOpen(false);setFabMode(null);}}/>
@@ -665,7 +653,6 @@
                 </div>
               )}
 
-              {/* Sidebar */}
               {sidebar&&(
                 <div style={{position:'fixed',inset:0,zIndex:200,display:'flex'}}>
                   <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.3)',backdropFilter:'blur(4px)'}} onClick={()=>setSidebar(false)}/>
@@ -731,7 +718,6 @@
                 </div>
               )}
 
-              {/* Header */}
               <header style={{position:'sticky',top:0,zIndex:100,background:'rgba(244,246,251,0.9)',backdropFilter:'blur(14px)',borderBottom:`1px solid ${C.border}`,padding:'0.85rem 1.1rem',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <span style={{fontFamily:'cursive',fontSize:'1.7rem',color:C.accent}}>Jimikki</span>
                 <button onClick={()=>setSidebar(true)} style={{background:'white',border:`1px solid ${C.border}`,borderRadius:'10px',padding:'0.45rem 0.7rem',cursor:'pointer',display:'flex',flexDirection:'column',gap:'4px',boxShadow:'0 1px 4px rgba(0,0,0,0.06)'}}>
@@ -741,7 +727,6 @@
 
               <main style={{padding:'1rem',paddingBottom:'7rem',display:'flex',flexDirection:'column',gap:'1rem'}}>
 
-                {/* ── HOME ── */}
                 {view==='home'&&(<>
                   <div style={{background:`linear-gradient(135deg,#4338CA 0%,#6366F1 60%,#818CF8 100%)`,borderRadius:'24px',padding:'1.75rem 1.5rem',position:'relative',overflow:'hidden',boxShadow:'0 8px 32px rgba(79,70,229,0.3)'}}>
                     <div style={{position:'absolute',top:'-30px',right:'-20px',width:'130px',height:'130px',borderRadius:'50%',background:'rgba(255,255,255,0.08)'}}/>
@@ -843,10 +828,7 @@
                   )}
                 </>)}
 
-                {/* ── ANALYTICS ── */}
                 {view==='analytics'&&(<>
-
-                  {/* Deep Research toggle */}
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                     <div style={{fontWeight:700,fontSize:'0.95rem',color:C.text}}>Analytics</div>
                     <button onClick={()=>setDeepMode(d=>!d)}
@@ -855,17 +837,14 @@
                     </button>
                   </div>
 
-                  {/* ── DEEP RESEARCH MODE ── */}
                   {deepMode&&(
                     <div style={{display:'flex',flexDirection:'column',gap:'1rem'}}>
-                      {/* DR header */}
                       <div style={{background:`linear-gradient(135deg,#312E81,#4F46E5)`,borderRadius:'20px',padding:'1.25rem',color:'white'}}>
                         <div style={{fontSize:'0.6rem',letterSpacing:'0.12em',opacity:.6,marginBottom:'4px'}}>DEEP RESEARCH MODE</div>
                         <div style={{fontWeight:800,fontSize:'1.1rem',marginBottom:'2px'}}>Monthly Analysis</div>
                         <div style={{fontSize:'0.72rem',opacity:.7}}>Compare months, drill into buckets, spot trends</div>
                       </div>
 
-                      {/* DR Controls */}
                       <Card>
                         <div style={{display:'flex',flexDirection:'column',gap:'0.75rem'}}>
                           <div>
@@ -908,7 +887,6 @@
                         </div>
                       </Card>
 
-                      {/* DR Multi-line chart: Income, Spending, Net together */}
                       <Card>
                         <div style={{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'4px'}}>
                           {metricLabel(drMetric)} — Last {drMonths} months
@@ -925,7 +903,6 @@
                         </ResponsiveContainer>
                       </Card>
 
-                      {/* Combined trend chart */}
                       <Card>
                         <div style={{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'0.85rem'}}>Income vs Spending vs Net</div>
                         <ResponsiveContainer width="100%" height={180}>
@@ -949,7 +926,6 @@
                         </div>
                       </Card>
 
-                      {/* Month Comparison */}
                       <Card>
                         <div style={{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'0.75rem'}}>🔁 Compare Two Months</div>
                         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.6rem',marginBottom:'0.85rem'}}>
@@ -1002,7 +978,6 @@
                         )}
                       </Card>
 
-                      {/* Bucket breakdown per selected month */}
                       {drCompareA&&(()=>{
                         const bd=getDRBucketBreakdown(drCompareA);
                         const bdTotal=bd.reduce((s,b)=>s+b.total,0);
@@ -1036,7 +1011,6 @@
                         );
                       })()}
 
-                      {/* Monthly table */}
                       <Card>
                         <div style={{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'0.85rem'}}>📅 Monthly Table — Last {drMonths} months</div>
                         <div style={{overflowX:'auto'}}>
@@ -1064,7 +1038,6 @@
                     </div>
                   )}
 
-                  {/* ── NORMAL ANALYTICS (hidden in deep mode) ── */}
                   {!deepMode&&(<>
                     <Card style={{padding:'1rem'}}>
                       <div style={{fontSize:'0.65rem',fontWeight:700,color:C.muted,letterSpacing:'0.08em',marginBottom:'0.5rem'}}>FILTER BY HOLDER</div>
@@ -1098,7 +1071,6 @@
                       ))}
                     </div>
 
-                    {/* Flow chart */}
                     {aView==='flow'&&(
                       <Card>
                         <div style={{display:'flex',background:C.bg,borderRadius:'12px',padding:'3px',marginBottom:'0.9rem'}}>
@@ -1145,7 +1117,6 @@
                       </Card>
                     )}
 
-                    {/* Buckets view — now with period filter */}
                     {aView==='buckets'&&(
                       <>
                         <Card style={{padding:'0.85rem 1rem'}}>
@@ -1196,7 +1167,6 @@
                       </>
                     )}
 
-                    {/* Transaction list */}
                     <Card>
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.75rem',flexWrap:'wrap',gap:'0.5rem'}}>
                         <div style={{fontWeight:700,fontSize:'0.88rem',color:C.text}}>Transactions <span style={{fontWeight:400,color:C.muted,fontSize:'0.72rem'}}>({filteredATxns.length})</span></div>
@@ -1220,7 +1190,6 @@
                 </>)}
               </main>
 
-              {/* Bottom nav */}
               <nav style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:'480px',background:'rgba(255,255,255,0.95)',backdropFilter:'blur(16px)',borderTop:`1px solid ${C.border}`,display:'flex',alignItems:'center',zIndex:90,height:'64px',boxShadow:'0 -2px 16px rgba(0,0,0,0.06)'}}>
                 <button onClick={()=>setView('home')} style={{flex:1,height:'100%',background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'2px',color:view==='home'?C.accent:C.muted}}>
                   <span style={{fontSize:'1.1rem'}}>🏠</span>
@@ -1244,7 +1213,13 @@
         }
 
         const root = createRoot(document.getElementById('root'));
-        root.render(<Jimikki />);
+        
+        // Wrap in error boundary to show errors on screen
+        try {
+            root.render(<Jimikki />);
+        } catch (e) {
+            document.body.innerHTML = '<div style="padding:20px; color:red; font-size:20px">App Crash: ' + e.toString() + '</div>';
+        }
     </script>
 </body>
 </html>
