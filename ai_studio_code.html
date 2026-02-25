@@ -1,0 +1,1250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Jimikki Wealth</title>
+    <style>
+        body { margin: 0; padding: 0; background: #F4F6FB; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    </style>
+    <!-- Import Map: Tells browser where to find React and Recharts -->
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "recharts": "https://esm.sh/recharts@2.12.0?external=react,react-dom"
+      }
+    }
+    </script>
+    <!-- Polyfill for Babel (to read JSX) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/javascript">
+        // 1. Polyfill window.storage to use LocalStorage
+        // Your code uses a custom 'window.storage', so we map it to browser localStorage
+        window.storage = {
+            get: async (key) => {
+                const val = localStorage.getItem(key);
+                return val ? { value: val } : null;
+            },
+            set: async (key, value) => {
+                localStorage.setItem(key, value);
+            }
+        };
+    </script>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useRef } from "react";
+        import { createRoot } from "react-dom/client";
+        import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LineChart, Line, PieChart, Pie, Cell } from "recharts";
+
+        // --- PASTE YOUR CODE STARTING HERE ---
+        
+        const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+        const fmt = n => `₹${Math.max(0,+n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+        const fmtS = n => { const v=Math.max(0,+n||0); return v>=100000?`₹${(v/100000).toFixed(1)}L`:v>=1000?`₹${(v/1000).toFixed(1)}K`:`₹${v.toFixed(0)}`; };
+        const todayStr = () => new Date().toISOString().slice(0,10);
+        const PALETTE = ['#6366F1','#F43F5E','#F97316','#22C55E','#06B6D4','#A855F7','#FBBF24','#EC4899'];
+        const DEF_BUCKETS = [
+          {id:'b1',name:'Food & Dining',color:'#F97316'},
+          {id:'b2',name:'Shopping',color:'#A855F7'},
+          {id:'b3',name:'Transport',color:'#06B6D4'},
+          {id:'b4',name:'Health',color:'#22C55E'},
+          {id:'b5',name:'Entertainment',color:'#F43F5E'},
+          {id:'b6',name:'Utilities',color:'#6366F1'},
+        ];
+
+        const C = {
+          bg:'#F4F6FB', card:'#FFFFFF', border:'#E8ECF4',
+          text:'#1A1D2E', sub:'#64748B', muted:'#A0AEC0',
+          accent:'#4F46E5', green:'#10B981', red:'#F43F5E', blue:'#3B82F6',
+          accentBg:'#EEF2FF', greenBg:'#ECFDF5', redBg:'#FFF1F2',
+        };
+
+        // Generate last N months as [{label, key}]
+        function lastNMonths(n) {
+          const now = new Date();
+          return Array.from({length:n},(_,i)=>{
+            const d = new Date(now.getFullYear(), now.getMonth()-n+1+i, 1);
+            return {
+              label: d.toLocaleDateString('en',{month:'short', year:'2-digit'}),
+              key: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`,
+            };
+          });
+        }
+
+        function periodFilter(txns, period) {
+          const now = new Date();
+          const todayKey = todayStr();
+          return txns.filter(t => {
+            const d = new Date(t.date);
+            if (period === 'today') return t.date === todayKey;
+            if (period === 'week') { const w = new Date(now); w.setDate(w.getDate()-6); return d >= w; }
+            if (period === 'month') { const m = new Date(now); m.setDate(m.getDate()-29); return d >= m; }
+            if (period === 'year') return t.date.startsWith(String(now.getFullYear()));
+            if (period === '5year') return d.getFullYear() >= now.getFullYear()-4;
+            // month key like "2025-03"
+            if (/^\d{4}-\d{2}$/.test(period)) return t.date.startsWith(period);
+            return true;
+          });
+        }
+
+        const PeriodPills = ({value, onChange, options}) => {
+          const opts = options || [['today','Today'],['week','Week'],['month','Month'],['year','Year'],['5year','5Y']];
+          return (
+            <div style={{display:'flex',gap:'4px',flexWrap:'wrap'}}>
+              {opts.map(([p,l]) => (
+                <button key={p} onClick={()=>onChange(p)}
+                  style={{padding:'4px 10px',borderRadius:'999px',border:`1px solid ${value===p?C.accent:C.border}`,background:value===p?C.accent:'white',color:value===p?'white':C.sub,cursor:'pointer',fontSize:'0.68rem',fontWeight:700,transition:'all .15s'}}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          );
+        };
+
+        const Chip = ({label, active, onClick, dot}) => (
+          <button onClick={onClick}
+            style={{display:'flex',alignItems:'center',gap:'5px',padding:'4px 12px',borderRadius:'999px',border:`1px solid ${active?C.accent:C.border}`,background:active?C.accentBg:'white',color:active?C.accent:C.sub,cursor:'pointer',fontSize:'0.72rem',fontWeight:active?700:400,whiteSpace:'nowrap'}}>
+            {dot&&<span style={{width:'7px',height:'7px',borderRadius:'50%',background:dot,display:'inline-block'}}/>}
+            {label}
+          </button>
+        );
+
+        const Card = ({children, style={}}) => (
+          <div style={{background:C.card,borderRadius:'20px',padding:'1.25rem',boxShadow:'0 2px 12px rgba(0,0,0,0.05)',border:`1px solid ${C.border}`,...style}}>{children}</div>
+        );
+
+        const SLabel = ({children}) => (
+          <div style={{fontSize:'0.62rem',fontWeight:700,color:C.muted,letterSpacing:'0.09em',marginBottom:'5px'}}>{children}</div>
+        );
+
+        const FInput = ({style={}, ...props}) => (
+          <input {...props} style={{width:'100%',background:C.bg,border:`1.5px solid ${C.border}`,borderRadius:'12px',padding:'0.6rem 0.85rem',color:C.text,fontSize:'0.9rem',outline:'none',boxSizing:'border-box',...style}}/>
+        );
+        const FSelect = ({children, style={}, ...props}) => (
+          <select {...props} style={{width:'100%',background:C.bg,border:`1.5px solid ${C.border}`,borderRadius:'12px',padding:'0.6rem 0.85rem',color:C.text,fontSize:'0.88rem',outline:'none',boxSizing:'border-box',...style}}>
+            {children}
+          </select>
+        );
+
+        function Jimikki() {
+          const [view, setView] = useState('home');
+          const [sidebar, setSidebar] = useState(false);
+          const [holders, setHolders] = useState([]);
+          const [txns, setTxns] = useState([]);
+          const [buckets, setBuckets] = useState(DEF_BUCKETS);
+          const [loaded, setLoaded] = useState(false);
+          const [toast, setToast] = useState('');
+
+          const [fabOpen, setFabOpen] = useState(false);
+          const [fabMode, setFabMode] = useState(null);
+          const [jAmt, setJAmt] = useState('');
+          const [jNote, setJNote] = useState('');
+          const [jBucket, setJBucket] = useState('');
+          const [jFrom, setJFrom] = useState('');
+          const [jTo, setJTo] = useState('');
+          const [jDate, setJDate] = useState(todayStr());
+          const [aiLoad, setAiLoad] = useState(false);
+          const [aiSug, setAiSug] = useState('');
+          const aiRef = useRef(null);
+
+          // Home
+          const [hPeriod, setHPeriod] = useState('month');
+          const [hMetric, setHMetric] = useState('income');
+          const [hChartType, setHChartType] = useState('bar');
+          const [hFilter, setHFilter] = useState(null);
+          const [hStatPeriod, setHStatPeriod] = useState('month');
+
+          // Analytics
+          const [aHFilter, setAHFilter] = useState(null);
+          const [aBFilter, setABFilter] = useState(null);
+          const [aPeriod, setAPeriod] = useState('month');
+          const [aView, setAView] = useState('flow');
+          const [aTxnPeriod, setATxnPeriod] = useState('month');
+          const [aMetric, setAMetric] = useState('spending');
+          const [aChartType, setAChartType] = useState('bar');
+
+          // Bucket time filter (for buckets view)
+          const [bktPeriod, setBktPeriod] = useState('month');
+
+          // Deep Research
+          const [deepMode, setDeepMode] = useState(false);
+          const [drMetric, setDrMetric] = useState('spending');
+          const [drBucket, setDrBucket] = useState(null); // null = all
+          const [drHolder, setDrHolder] = useState(null);
+          const [drMonths, setDrMonths] = useState(6);
+          const [drCompareA, setDrCompareA] = useState('');
+          const [drCompareB, setDrCompareB] = useState('');
+
+          // Sidebar forms
+          const [nhName, setNhName] = useState('');
+          const [nhBal, setNhBal] = useState('');
+          const [nbName, setNbName] = useState('');
+          const [nbColor, setNbColor] = useState(PALETTE[0]);
+
+          const actH = holders.filter(h=>!h.deleted);
+          const delH = holders.filter(h=>h.deleted);
+          const actT = txns.filter(t=>!t.deleted).sort((a,b)=>b.date.localeCompare(a.date));
+          const delT = txns.filter(t=>t.deleted).sort((a,b)=>b.date.localeCompare(a.date));
+          const hName = id => holders.find(h=>h.id===id)?.name||'?';
+          const bName = id => buckets.find(b=>b.id===id)?.name||'—';
+          const bColor = id => buckets.find(b=>b.id===id)?.color||C.accent;
+          const wealth = fH => (fH?actH.filter(h=>h.id===fH):actH).reduce((s,h)=>s+h.balance,0);
+
+          function statForPeriod(fH, period) {
+            const base = periodFilter(actT.filter(t=>t.type!=='swap'&&(!fH||t.holderId===fH)), period);
+            return {
+              inc: base.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0),
+              spd: base.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0),
+            };
+          }
+
+          useEffect(()=>{ load(); },[]);
+          useEffect(()=>{ if(loaded) save(); },[holders,txns,buckets,loaded]);
+
+          async function load() {
+            try {
+              const r = await window.storage.get('jimikki-v4');
+              if(r){ const d=JSON.parse(r.value); setHolders(d.holders||[]); setTxns(d.txns||[]); setBuckets(d.buckets||DEF_BUCKETS); }
+            } catch {}
+            setLoaded(true);
+          }
+          async function save() {
+            try { await window.storage.set('jimikki-v4',JSON.stringify({holders,txns,buckets})); } catch {}
+          }
+          function pop(msg){ setToast(msg); setTimeout(()=>setToast(''),2500); }
+
+          function noteChange(v) {
+            setJNote(v); setAiSug('');
+            if(aiRef.current) clearTimeout(aiRef.current);
+            if(v.length<3) return;
+            aiRef.current = setTimeout(()=>suggestBucket(v),900);
+          }
+          async function suggestBucket(note) {
+            if(!buckets.length) return;
+            setAiLoad(true);
+            try {
+              const res = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},
+                body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:30,
+                  messages:[{role:"user",content:`Note: "${note}". Pick ONE: ${buckets.map(b=>b.name).join(', ')}. Reply exact name only.`}]})});
+              const d = await res.json();
+              const s = d.content?.[0]?.text?.trim();
+              const match = buckets.find(b=>b.name===s);
+              if(match) setAiSug(match.id);
+            } catch {}
+            setAiLoad(false);
+          }
+
+          function openFab(mode) {
+            setFabMode(mode); setJAmt(''); setJNote(''); setJBucket(''); setJDate(todayStr());
+            setJFrom(actH.find(h=>h.isPrimary)?.id||actH[0]?.id||''); setJTo(''); setAiSug('');
+          }
+
+          function submitTxn() {
+            const amt = parseFloat(jAmt);
+            if(!amt||amt<=0) return pop('Enter a valid amount');
+            if(fabMode==='spending'&&!jBucket) return pop('Please select a spending bucket');
+            const from = holders.find(h=>h.id===jFrom);
+            if(!from) return pop('Select a holder');
+            if(fabMode==='income'){
+              setTxns(ts=>[{id:uid(),type:'income',amount:amt,note:jNote,holderId:jFrom,date:jDate,deleted:false},...ts]);
+              setHolders(hs=>hs.map(h=>h.id===jFrom?{...h,balance:h.balance+amt}:h));
+            } else if(fabMode==='spending'){
+              if(from.balance<amt) return pop('Insufficient balance — cannot go below ₹0');
+              setTxns(ts=>[{id:uid(),type:'spending',amount:amt,note:jNote,bucketId:jBucket,holderId:jFrom,date:jDate,deleted:false},...ts]);
+              setHolders(hs=>hs.map(h=>h.id===jFrom?{...h,balance:h.balance-amt}:h));
+            } else {
+              if(!jTo||jTo===jFrom) return pop('Select a different destination holder');
+              if(from.balance<amt) return pop('Insufficient balance — cannot go below ₹0');
+              setTxns(ts=>[{id:uid(),type:'swap',amount:amt,note:jNote||'Transfer',holderId:jFrom,toHolderId:jTo,date:jDate,deleted:false},...ts]);
+              setHolders(hs=>hs.map(h=>{
+                if(h.id===jFrom) return {...h,balance:h.balance-amt};
+                if(h.id===jTo) return {...h,balance:h.balance+amt};
+                return h;
+              }));
+            }
+            setFabOpen(false); setFabMode(null); pop('Entry added ✓');
+          }
+
+          function delTxn(id) {
+            if(!window.confirm('Delete this transaction? This will reverse its effect on your balance.')) return;
+            const t=txns.find(x=>x.id===id); if(!t) return;
+            if(t.type==='income'){
+              const h=holders.find(h=>h.id===t.holderId);
+              if(h&&h.balance<t.amount) return pop('Cannot delete — balance would go below ₹0');
+            }
+            if(t.type==='swap'){
+              const th=holders.find(h=>h.id===t.toHolderId);
+              if(th&&th.balance<t.amount) return pop('Cannot delete — would cause negative balance');
+            }
+            setHolders(hs=>hs.map(h=>{
+              if(t.type==='income'&&h.id===t.holderId) return {...h,balance:h.balance-t.amount};
+              if(t.type==='spending'&&h.id===t.holderId) return {...h,balance:h.balance+t.amount};
+              if(t.type==='swap'){if(h.id===t.holderId)return{...h,balance:h.balance+t.amount};if(h.id===t.toHolderId)return{...h,balance:h.balance-t.amount};}
+              return h;
+            }));
+            setTxns(ts=>ts.map(x=>x.id===id?{...x,deleted:true}:x));
+            pop('Moved to bin');
+          }
+
+          function restTxn(id) {
+            if(!window.confirm('Restore this transaction? It will be added back to your balance.')) return;
+            const t=txns.find(x=>x.id===id); if(!t) return;
+            if(t.type!=='income'){
+              const h=holders.find(h=>h.id===t.holderId);
+              if(!h||h.balance<t.amount) return pop('Insufficient balance to restore');
+            }
+            setHolders(hs=>hs.map(h=>{
+              if(t.type==='income'&&h.id===t.holderId) return {...h,balance:h.balance+t.amount};
+              if(t.type==='spending'&&h.id===t.holderId) return {...h,balance:h.balance-t.amount};
+              if(t.type==='swap'){if(h.id===t.holderId)return{...h,balance:h.balance-t.amount};if(h.id===t.toHolderId)return{...h,balance:h.balance+t.amount};}
+              return h;
+            }));
+            setTxns(ts=>ts.map(x=>x.id===id?{...x,deleted:false}:x));
+            pop('Restored ✓');
+          }
+
+          function addHolder() {
+            if(!nhName.trim()) return pop('Enter a name');
+            const bal=Math.max(0,parseFloat(nhBal)||0);
+            setHolders(hs=>[...hs,{id:uid(),name:nhName.trim(),balance:bal,isPrimary:hs.filter(h=>!h.deleted).length===0,deleted:false}]);
+            setNhName(''); setNhBal(''); pop('Holder added ✓');
+          }
+          function delHolder(id) {
+            if(!window.confirm('Archive this holder? You can restore it later.')) return;
+            if(holders.find(x=>x.id===id)?.isPrimary) return pop("Can't remove primary holder");
+            setHolders(hs=>hs.map(x=>x.id===id?{...x,deleted:true}:x)); pop('Archived');
+          }
+          function restHolder(id) {
+            if(!window.confirm('Restore this holder?')) return;
+            setHolders(hs=>hs.map(x=>x.id===id?{...x,deleted:false}:x)); pop('Restored ✓');
+          }
+          function setPrimary(id) { setHolders(hs=>hs.map(x=>({...x,isPrimary:x.id===id}))); pop('Primary set'); }
+
+          function addBucket() {
+            if(!nbName.trim()) return pop('Enter bucket name');
+            setBuckets(bs=>[...bs,{id:uid(),name:nbName.trim(),color:nbColor}]);
+            setNbName(''); pop('Bucket created ✓');
+          }
+          function delBucket(id) {
+            const inUse = actT.some(t=>t.bucketId===id);
+            if(inUse) {
+              pop('Bucket in use — remove its transactions first');
+              return;
+            }
+            setBuckets(bs=>bs.filter(b=>b.id!==id));
+            pop('Bucket removed');
+          }
+
+          // Chart data builders
+          function buildChartData(fH, period, metric) {
+            const now = new Date();
+            const base = actT.filter(t=>t.type!=='swap'&&(!fH||t.holderId===fH));
+            const val = arr => {
+              if(metric==='income') return arr.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+              if(metric==='spending') return arr.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0);
+              const inc=arr.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+              const spd=arr.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0);
+              return Math.max(0,inc-spd);
+            };
+            if(period==='today'||period==='week'){
+              const days=period==='today'?1:7;
+              return Array.from({length:days},(_,i)=>{
+                const d=new Date(now); d.setDate(d.getDate()-(days-1-i));
+                const key=d.toISOString().slice(0,10);
+                return {name:days===1?'Today':d.toLocaleDateString('en',{weekday:'short'}),Value:val(base.filter(t=>t.date===key))};
+              });
+            }
+            if(period==='month'){
+              return Array.from({length:12},(_,i)=>{
+                const d=new Date(now.getFullYear(),now.getMonth()-11+i,1);
+                const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+                return {name:d.toLocaleDateString('en',{month:'short'}),Value:val(base.filter(t=>t.date.slice(0,7)===key))};
+              });
+            }
+            if(period==='year'){
+              const yr=now.getFullYear();
+              return Array.from({length:12},(_,i)=>{
+                const key=`${yr}-${String(i+1).padStart(2,'0')}`;
+                return {name:new Date(yr,i,1).toLocaleDateString('en',{month:'short'}),Value:val(base.filter(t=>t.date.slice(0,7)===key))};
+              });
+            }
+            return Array.from({length:5},(_,i)=>{const yr=now.getFullYear()-4+i;return {name:String(yr),Value:val(base.filter(t=>t.date.startsWith(String(yr))))};});
+          }
+
+          const metricColor = m=>m==='income'?C.green:m==='spending'?C.red:C.accent;
+          const metricLabel = m=>m==='income'?'Income':m==='spending'?'Spending':'Net Savings';
+
+          // Bucket stats filtered by period
+          function bucketStats(period){
+            const base = periodFilter(
+              actT.filter(t=>t.type==='spending'&&(!aHFilter||t.holderId===aHFilter)),
+              period
+            );
+            return buckets.map(b=>({...b,total:base.filter(t=>t.bucketId===b.id).reduce((s,t)=>s+t.amount,0)}))
+              .filter(b=>b.total>0).sort((a,b2)=>b2.total-a.total);
+          }
+
+          // Analytics chart
+          const aMetricColor = aMetric==='income'?C.green:aMetric==='spending'?C.red:C.accent;
+
+          function buildAChartData(){
+            const now = new Date();
+            const base = actT.filter(t=>t.type!=='swap'&&(!aHFilter||t.holderId===aHFilter)&&(!aBFilter||t.bucketId===aBFilter));
+            const val = arr => {
+              if(aMetric==='income') return arr.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+              if(aMetric==='spending') return arr.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0);
+              const inc=arr.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+              const spd=arr.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0);
+              return Math.max(0,inc-spd);
+            };
+            if(aPeriod==='today'||aPeriod==='week'){
+              const days=aPeriod==='today'?1:7;
+              return Array.from({length:days},(_,i)=>{
+                const d=new Date(now); d.setDate(d.getDate()-(days-1-i));
+                const key=d.toISOString().slice(0,10);
+                return {name:days===1?'Today':d.toLocaleDateString('en',{weekday:'short'}),Value:val(base.filter(t=>t.date===key))};
+              });
+            }
+            if(aPeriod==='month'){
+              return Array.from({length:12},(_,i)=>{
+                const d=new Date(now.getFullYear(),now.getMonth()-11+i,1);
+                const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+                return {name:d.toLocaleDateString('en',{month:'short'}),Value:val(base.filter(t=>t.date.slice(0,7)===key))};
+              });
+            }
+            if(aPeriod==='year'){
+              const yr=now.getFullYear();
+              return Array.from({length:12},(_,i)=>{
+                const key=`${yr}-${String(i+1).padStart(2,'0')}`;
+                return {name:new Date(yr,i,1).toLocaleDateString('en',{month:'short'}),Value:val(base.filter(t=>t.date.slice(0,7)===key))};
+              });
+            }
+            return Array.from({length:5},(_,i)=>{const yr=now.getFullYear()-4+i;return {name:String(yr),Value:val(base.filter(t=>t.date.startsWith(String(yr))))};});
+          }
+
+          // ── Deep Research data builder ──
+          function buildDRData() {
+            const months = lastNMonths(drMonths);
+            const base = actT.filter(t=>
+              t.type!=='swap' &&
+              (!drHolder||t.holderId===drHolder) &&
+              (!drBucket||(t.type==='spending'&&t.bucketId===drBucket))
+            );
+            const getVal = (arr, metric) => {
+              if(metric==='income') return arr.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+              if(metric==='spending') return arr.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0);
+              const inc=arr.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+              const spd=arr.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0);
+              return Math.max(0,inc-spd);
+            };
+            return months.map(m=>({
+              name: m.label,
+              key: m.key,
+              Income: getVal(base.filter(t=>t.date.slice(0,7)===m.key),'income'),
+              Spending: getVal(base.filter(t=>t.date.slice(0,7)===m.key),'spending'),
+              Net: getVal(base.filter(t=>t.date.slice(0,7)===m.key),'net'),
+              Value: getVal(base.filter(t=>t.date.slice(0,7)===m.key),drMetric),
+            }));
+          }
+
+          // Month comparison for DR
+          function getDRCompareStats(monthKey, metric) {
+            const base = actT.filter(t=>
+              t.type!=='swap' &&
+              (!drHolder||t.holderId===drHolder) &&
+              (!drBucket||(t.type==='spending'&&t.bucketId===drBucket)) &&
+              t.date.slice(0,7)===monthKey
+            );
+            if(metric==='income') return base.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+            if(metric==='spending') return base.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0);
+            const inc=base.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+            const spd=base.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0);
+            return Math.max(0,inc-spd);
+          }
+
+          // DR bucket breakdown for a month
+          function getDRBucketBreakdown(monthKey) {
+            return buckets.map(b=>{
+              const total = actT.filter(t=>
+                t.type==='spending' &&
+                t.bucketId===b.id &&
+                t.date.slice(0,7)===monthKey &&
+                (!drHolder||t.holderId===drHolder)
+              ).reduce((s,t)=>s+t.amount,0);
+              return {...b, total};
+            }).filter(b=>b.total>0).sort((a,c)=>c.total-a.total);
+          }
+
+          const drData = buildDRData();
+          const availMonths = lastNMonths(24);
+
+          const filteredATxns = (() => {
+            let base = actT.filter(t=>(!aHFilter||t.holderId===aHFilter||(t.type==='swap'&&t.toHolderId===aHFilter)));
+            if(aBFilter) base=base.filter(t=>t.bucketId===aBFilter);
+            return periodFilter(base, aTxnPeriod);
+          })();
+
+          const hStats = statForPeriod(hFilter, hStatPeriod);
+          const hChartData = buildChartData(hFilter, hPeriod, hMetric);
+          const aChartData = buildAChartData();
+          const bStats = bucketStats(bktPeriod);
+          const bTotal = bStats.reduce((s,b)=>s+b.total,0);
+
+          const axisStyle = {fontSize:9,fill:C.sub};
+          const ttStyle = {background:'white',border:`1px solid ${C.border}`,borderRadius:'12px',boxShadow:'0 4px 20px rgba(0,0,0,0.08)'};
+
+          const TxnRow = ({t, onDel, onRest}) => {
+            const col=t.type==='income'?C.green:t.type==='swap'?C.blue:C.red;
+            const bg=t.type==='income'?C.greenBg:t.type==='swap'?'#EFF6FF':C.redBg;
+            return (
+              <div style={{display:'grid',gridTemplateColumns:'40px 1fr auto 32px',gap:'0.5rem',alignItems:'center',padding:'0.7rem 0',borderBottom:`1px solid ${C.border}`}}>
+                <div style={{width:'40px',height:'40px',borderRadius:'12px',background:bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.05rem',flexShrink:0}}>
+                  {t.type==='income'?'↙️':t.type==='swap'?'↔️':'↗️'}
+                </div>
+                <div style={{minWidth:0}}>
+                  <div style={{fontSize:'0.85rem',fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.note||bName(t.bucketId)||'Transfer'}</div>
+                  <div style={{fontSize:'0.68rem',color:C.sub,marginTop:'2px',display:'flex',gap:'5px',flexWrap:'wrap'}}>
+                    <span>{t.date}</span>
+                    {t.bucketId&&<span style={{color:bColor(t.bucketId),fontWeight:600}}>· {bName(t.bucketId)}</span>}
+                    {t.toHolderId&&<span style={{color:C.blue}}>· {hName(t.holderId)} → {hName(t.toHolderId)}</span>}
+                    {!t.toHolderId&&<span>· {hName(t.holderId)}</span>}
+                  </div>
+                </div>
+                <span style={{fontSize:'0.88rem',fontWeight:700,color:col,whiteSpace:'nowrap'}}>
+                  {t.type==='income'?'+':t.type==='spending'?'-':''}{fmt(t.amount)}
+                </span>
+                {onDel&&<button onClick={onDel} style={{background:'none',border:'none',cursor:'pointer',color:C.muted,fontSize:'1.1rem',padding:0,lineHeight:1,display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>}
+                {onRest&&<button onClick={onRest} style={{background:C.greenBg,color:C.green,border:'none',borderRadius:'7px',padding:'3px 7px',cursor:'pointer',fontSize:'0.65rem',fontWeight:700}}>↩</button>}
+              </div>
+            );
+          };
+
+          const SingleTooltip = ({active,payload,label}) => {
+            if(!active||!payload?.length) return null;
+            return (
+              <div style={{background:'white',border:`1px solid ${C.border}`,borderRadius:'12px',padding:'0.65rem 0.9rem',boxShadow:'0 4px 20px rgba(0,0,0,0.1)',fontSize:'0.78rem'}}>
+                <div style={{color:C.sub,marginBottom:'4px',fontWeight:600}}>{label}</div>
+                <div style={{fontWeight:800,color:metricColor(hMetric),fontSize:'0.92rem'}}>{fmt(payload[0]?.value||0)}</div>
+              </div>
+            );
+          };
+
+          const ASingleTooltip = ({active,payload,label}) => {
+            if(!active||!payload?.length) return null;
+            return (
+              <div style={{background:'white',border:`1px solid ${C.border}`,borderRadius:'12px',padding:'0.65rem 0.9rem',boxShadow:'0 4px 20px rgba(0,0,0,0.1)',fontSize:'0.78rem'}}>
+                <div style={{color:C.sub,marginBottom:'4px',fontWeight:600}}>{label}</div>
+                <div style={{fontWeight:800,color:aMetricColor,fontSize:'0.92rem'}}>{fmt(payload[0]?.value||0)}</div>
+              </div>
+            );
+          };
+
+          const DRTooltip = ({active,payload,label}) => {
+            if(!active||!payload?.length) return null;
+            return (
+              <div style={{background:'white',border:`1px solid ${C.border}`,borderRadius:'12px',padding:'0.65rem 0.9rem',boxShadow:'0 4px 20px rgba(0,0,0,0.1)',fontSize:'0.78rem'}}>
+                <div style={{color:C.sub,marginBottom:'6px',fontWeight:700}}>{label}</div>
+                {payload.map(p=>(
+                  <div key={p.dataKey} style={{display:'flex',justifyContent:'space-between',gap:'1.5rem',fontWeight:600,color:p.color,marginBottom:'2px'}}>
+                    <span>{p.dataKey}</span><span>{fmt(p.value)}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          };
+
+          if(!loaded) return (
+            <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:C.bg}}>
+              <div style={{fontFamily:'cursive',fontSize:'2.5rem',color:C.accent}}>Jimikki</div>
+              <div style={{fontSize:'0.8rem',color:C.sub,marginTop:'0.5rem'}}>Loading your wealth diary…</div>
+            </div>
+          );
+
+          return (
+            <div style={{minHeight:'100vh',background:C.bg,maxWidth:'480px',margin:'0 auto',fontFamily:'"Inter",system-ui,sans-serif',color:C.text}}>
+
+              {toast&&(
+                <div style={{position:'fixed',top:'1rem',left:'50%',transform:'translateX(-50%)',zIndex:2000,background:C.text,color:'white',padding:'0.5rem 1.25rem',borderRadius:'999px',fontSize:'0.78rem',whiteSpace:'nowrap',boxShadow:'0 4px 20px rgba(0,0,0,0.2)',letterSpacing:'0.01em'}}>
+                  {toast}
+                </div>
+              )}
+
+              {/* FAB Sheet */}
+              {fabOpen&&(
+                <div style={{position:'fixed',inset:0,zIndex:300,display:'flex',flexDirection:'column',justifyContent:'flex-end'}}>
+                  <div style={{position:'absolute',inset:0,background:'rgba(15,18,40,0.5)',backdropFilter:'blur(6px)'}} onClick={()=>{setFabOpen(false);setFabMode(null);}}/>
+                  <div style={{position:'relative',background:'white',borderRadius:'28px 28px 0 0',padding:'1.25rem 1.25rem 7rem',maxWidth:'480px',width:'100%',margin:'0 auto',boxShadow:'0 -8px 40px rgba(0,0,0,0.12)'}}>
+                    <div style={{width:'36px',height:'4px',borderRadius:'2px',background:C.border,margin:'0 auto 1.25rem'}}/>
+                    {!fabMode?(
+                      <>
+                        <div style={{marginBottom:'1.25rem'}}>
+                          <div style={{fontWeight:800,fontSize:'1.1rem',color:C.text}}>New Entry</div>
+                          <div style={{fontSize:'0.73rem',color:C.sub,marginTop:'2px'}}>Choose what you want to record</div>
+                        </div>
+                        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'0.65rem'}}>
+                          {[{m:'income',emoji:'⬇️',label:'Income',sub:'Money in',col:C.green,bg:C.greenBg},
+                            {m:'spending',emoji:'⬆️',label:'Spending',sub:'Money out',col:C.red,bg:C.redBg},
+                            {m:'swap',emoji:'↔️',label:'Swap',sub:'Move funds',col:C.blue,bg:'#EFF6FF'}].map(({m,emoji,label,sub,col,bg})=>(
+                            <button key={m} onClick={()=>openFab(m)} style={{display:'flex',flexDirection:'column',alignItems:'center',padding:'1.25rem 0.5rem',borderRadius:'18px',border:`1.5px solid ${col}30`,background:bg,cursor:'pointer',gap:'0.35rem'}}>
+                              <span style={{fontSize:'1.75rem'}}>{emoji}</span>
+                              <span style={{fontWeight:700,fontSize:'0.83rem',color:col}}>{label}</span>
+                              <span style={{fontSize:'0.62rem',color:C.sub}}>{sub}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    ):(
+                      <>
+                        <div style={{display:'flex',alignItems:'center',gap:'0.65rem',marginBottom:'1.1rem'}}>
+                          <button onClick={()=>setFabMode(null)} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:'10px',padding:'0.35rem 0.7rem',cursor:'pointer',fontSize:'0.8rem',color:C.sub}}>← Back</button>
+                          <span style={{fontWeight:700,fontSize:'0.95rem',color:fabMode==='income'?C.green:fabMode==='spending'?C.red:C.blue}}>
+                            {fabMode==='income'?'⬇️ Add Income':fabMode==='spending'?'⬆️ Add Spending':'↔️ Transfer'}
+                          </span>
+                        </div>
+                        {actH.length===0&&<div style={{background:C.redBg,border:`1px solid ${C.red}30`,borderRadius:'12px',padding:'0.7rem',fontSize:'0.78rem',color:C.red,marginBottom:'0.85rem'}}>⚠️ No holders found. Add one from the ☰ menu first.</div>}
+                        <div style={{display:'flex',flexDirection:'column',gap:'0.8rem'}}>
+                          <div>
+                            <SLabel>AMOUNT</SLabel>
+                            <FInput value={jAmt} onChange={e=>setJAmt(e.target.value)} type="number" min="0" placeholder="0.00" autoFocus style={{fontSize:'1.35rem',fontWeight:800}}/>
+                          </div>
+                          <div>
+                            <SLabel>NOTE {aiLoad&&<span style={{color:C.muted,fontWeight:400,fontSize:'0.65rem'}}> · AI thinking…</span>} <span style={{color:C.muted,fontWeight:400,fontSize:'0.65rem'}}>(optional)</span></SLabel>
+                            <FInput value={jNote} onChange={e=>noteChange(e.target.value)} placeholder={fabMode==='spending'?'e.g. Starbucks, grocery…':'e.g. Salary, bonus…'}/>
+                            {aiSug&&(
+                              <div style={{marginTop:'5px',display:'flex',alignItems:'center',gap:'6px'}}>
+                                <span style={{fontSize:'0.67rem',color:C.sub}}>AI suggests:</span>
+                                <button onClick={()=>{setJBucket(aiSug);setAiSug('');}} style={{fontSize:'0.7rem',background:C.greenBg,color:C.green,border:`1px solid ${C.green}40`,borderRadius:'999px',padding:'2px 10px',cursor:'pointer',fontWeight:700}}>✓ {bName(aiSug)}</button>
+                              </div>
+                            )}
+                          </div>
+                          {fabMode==='spending'&&(
+                            <div>
+                              <SLabel>BUCKET <span style={{color:C.red,fontWeight:700}}>* required</span></SLabel>
+                              <FSelect value={jBucket} onChange={e=>setJBucket(e.target.value)}>
+                                <option value="">— Choose a bucket —</option>
+                                {buckets.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}
+                              </FSelect>
+                            </div>
+                          )}
+                          <div style={{display:'grid',gridTemplateColumns:fabMode==='swap'?'1fr 1fr':'1fr',gap:'0.6rem'}}>
+                            <div>
+                              <SLabel>{fabMode==='swap'?'FROM':'HOLDER'}</SLabel>
+                              <FSelect value={jFrom} onChange={e=>setJFrom(e.target.value)}>
+                                <option value="">Select holder</option>
+                                {actH.map(h=><option key={h.id} value={h.id}>{h.name} ({fmt(h.balance)})</option>)}
+                              </FSelect>
+                            </div>
+                            {fabMode==='swap'&&(
+                              <div>
+                                <SLabel>TO</SLabel>
+                                <FSelect value={jTo} onChange={e=>setJTo(e.target.value)}>
+                                  <option value="">Select holder</option>
+                                  {actH.filter(h=>h.id!==jFrom).map(h=><option key={h.id} value={h.id}>{h.name}</option>)}
+                                </FSelect>
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <SLabel>DATE</SLabel>
+                            <FInput type="date" value={jDate} onChange={e=>setJDate(e.target.value)}/>
+                          </div>
+                          <button onClick={submitTxn} style={{padding:'0.8rem',borderRadius:'14px',border:'none',background:fabMode==='income'?C.green:fabMode==='spending'?C.red:C.blue,color:'white',fontWeight:800,fontSize:'0.95rem',cursor:'pointer'}}>
+                            Record {fabMode.charAt(0).toUpperCase()+fabMode.slice(1)}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Sidebar */}
+              {sidebar&&(
+                <div style={{position:'fixed',inset:0,zIndex:200,display:'flex'}}>
+                  <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.3)',backdropFilter:'blur(4px)'}} onClick={()=>setSidebar(false)}/>
+                  <div style={{position:'relative',marginLeft:'auto',width:'300px',background:'white',height:'100%',overflowY:'auto',padding:'1.5rem 1.1rem',display:'flex',flexDirection:'column',gap:'0.4rem',boxShadow:'-4px 0 40px rgba(0,0,0,0.12)'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.75rem'}}>
+                      <span style={{fontFamily:'cursive',fontSize:'1.5rem',color:C.accent}}>Jimikki</span>
+                      <button onClick={()=>setSidebar(false)} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:'8px',padding:'0.3rem 0.6rem',cursor:'pointer',color:C.sub}}>✕</button>
+                    </div>
+                    {[['home','🏠','Home'],['analytics','📊','Analytics']].map(([v,ic,l])=>(
+                      <button key={v} onClick={()=>{setView(v);setSidebar(false);}} style={{textAlign:'left',padding:'0.6rem 0.85rem',border:`1px solid ${view===v?C.accent+'60':C.border}`,borderRadius:'12px',background:view===v?C.accentBg:'transparent',fontWeight:view===v?700:400,cursor:'pointer',fontSize:'0.88rem',color:view===v?C.accent:C.sub}}>
+                        {ic} {l}
+                      </button>
+                    ))}
+                    <div style={{height:'1px',background:C.border,margin:'0.5rem 0'}}/>
+                    <div style={{fontSize:'0.6rem',fontWeight:700,color:C.muted,letterSpacing:'0.1em'}}>MONEY HOLDERS</div>
+                    {actH.length===0&&<div style={{fontSize:'0.78rem',color:C.muted,textAlign:'center',padding:'0.65rem'}}>No holders yet</div>}
+                    {actH.map(h=>(
+                      <div key={h.id} style={{display:'flex',alignItems:'center',gap:'0.45rem',padding:'0.5rem 0.7rem',background:C.bg,borderRadius:'12px',border:`1px solid ${C.border}`}}>
+                        <div style={{width:'8px',height:'8px',borderRadius:'50%',background:h.isPrimary?C.accent:C.muted,flexShrink:0}}/>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:'0.82rem',fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{h.name}</div>
+                          <div style={{fontSize:'0.68rem',color:C.sub}}>{fmt(h.balance)}</div>
+                        </div>
+                        {!h.isPrimary&&<button onClick={()=>setPrimary(h.id)} style={{background:'none',border:`1px solid ${C.border}`,borderRadius:'6px',padding:'2px 6px',cursor:'pointer',color:C.muted,fontSize:'0.62rem'}}>★</button>}
+                        {!h.isPrimary&&<button onClick={()=>delHolder(h.id)} style={{background:'none',border:'none',cursor:'pointer',color:C.red,fontSize:'1rem',opacity:.6}}>×</button>}
+                      </div>
+                    ))}
+                    <div style={{display:'flex',gap:'0.35rem'}}>
+                      <FInput value={nhName} onChange={e=>setNhName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addHolder()} placeholder="Name" style={{flex:2,minWidth:0}}/>
+                      <FInput value={nhBal} onChange={e=>setNhBal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addHolder()} placeholder="₹" type="number" min="0" style={{flex:1,minWidth:0}}/>
+                      <button onClick={addHolder} style={{background:C.accent,color:'white',border:'none',borderRadius:'12px',padding:'0.5rem 0.75rem',cursor:'pointer',fontWeight:700,fontSize:'1rem',flexShrink:0}}>+</button>
+                    </div>
+                    {delH.length>0&&<>
+                      <div style={{fontSize:'0.6rem',fontWeight:700,color:C.muted,letterSpacing:'0.1em',marginTop:'0.25rem'}}>ARCHIVED HOLDERS</div>
+                      {delH.map(h=>(
+                        <div key={h.id} style={{display:'flex',alignItems:'center',gap:'0.4rem',padding:'0.45rem 0.7rem',background:'#FFFBEB',borderRadius:'10px',border:'1px solid #FDE68A'}}>
+                          <div style={{flex:1,fontSize:'0.78rem',color:'#92400E',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{h.name} ({fmt(h.balance)})</div>
+                          <button onClick={()=>restHolder(h.id)} style={{fontSize:'0.68rem',background:'#FEF3C7',color:'#92400E',border:'1px solid #FDE68A',borderRadius:'6px',padding:'2px 8px',cursor:'pointer'}}>↩</button>
+                        </div>
+                      ))}
+                    </>}
+                    <div style={{height:'1px',background:C.border,margin:'0.5rem 0'}}/>
+                    <div style={{fontSize:'0.6rem',fontWeight:700,color:C.muted,letterSpacing:'0.1em'}}>SPENDING BUCKETS</div>
+                    {buckets.map(b=>(
+                      <div key={b.id} style={{display:'flex',alignItems:'center',gap:'0.5rem',padding:'0.5rem 0.7rem',background:C.bg,borderRadius:'12px',border:`1px solid ${C.border}`}}>
+                        <div style={{width:'10px',height:'10px',borderRadius:'3px',background:b.color,flexShrink:0}}/>
+                        <span style={{flex:1,fontSize:'0.82rem',fontWeight:500,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.name}</span>
+                        <button
+                          onClick={()=>delBucket(b.id)}
+                          style={{background:'none',border:'none',cursor:'pointer',color:C.red,fontSize:'1rem',opacity:0.7,lineHeight:1,padding:'0 2px'}}>×</button>
+                      </div>
+                    ))}
+                    <div style={{display:'flex',gap:'0.35rem',alignItems:'center'}}>
+                      <FInput value={nbName} onChange={e=>setNbName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addBucket()} placeholder="New bucket" style={{flex:1,minWidth:0}}/>
+                      <div style={{display:'flex',gap:'3px',flexShrink:0}}>
+                        {PALETTE.slice(0,4).map(c=>(
+                          <button key={c} onClick={()=>setNbColor(c)} style={{width:'20px',height:'20px',borderRadius:'5px',background:c,border:nbColor===c?'2px solid #1A1D2E':'2px solid transparent',cursor:'pointer',flexShrink:0}}/>
+                        ))}
+                      </div>
+                      <button onClick={addBucket} style={{background:C.accent,color:'white',border:'none',borderRadius:'12px',padding:'0.5rem 0.75rem',cursor:'pointer',fontWeight:700,fontSize:'1rem',flexShrink:0}}>+</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Header */}
+              <header style={{position:'sticky',top:0,zIndex:100,background:'rgba(244,246,251,0.9)',backdropFilter:'blur(14px)',borderBottom:`1px solid ${C.border}`,padding:'0.85rem 1.1rem',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span style={{fontFamily:'cursive',fontSize:'1.7rem',color:C.accent}}>Jimikki</span>
+                <button onClick={()=>setSidebar(true)} style={{background:'white',border:`1px solid ${C.border}`,borderRadius:'10px',padding:'0.45rem 0.7rem',cursor:'pointer',display:'flex',flexDirection:'column',gap:'4px',boxShadow:'0 1px 4px rgba(0,0,0,0.06)'}}>
+                  {[0,1,2].map(i=><span key={i} style={{display:'block',width:'18px',height:'2px',background:C.sub,borderRadius:'1px'}}/>)}
+                </button>
+              </header>
+
+              <main style={{padding:'1rem',paddingBottom:'7rem',display:'flex',flexDirection:'column',gap:'1rem'}}>
+
+                {/* ── HOME ── */}
+                {view==='home'&&(<>
+                  <div style={{background:`linear-gradient(135deg,#4338CA 0%,#6366F1 60%,#818CF8 100%)`,borderRadius:'24px',padding:'1.75rem 1.5rem',position:'relative',overflow:'hidden',boxShadow:'0 8px 32px rgba(79,70,229,0.3)'}}>
+                    <div style={{position:'absolute',top:'-30px',right:'-20px',width:'130px',height:'130px',borderRadius:'50%',background:'rgba(255,255,255,0.08)'}}/>
+                    <div style={{position:'absolute',bottom:'-40px',left:'10px',width:'90px',height:'90px',borderRadius:'50%',background:'rgba(255,255,255,0.05)'}}/>
+                    <div style={{position:'relative'}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:'0.5rem'}}>
+                        <div>
+                          <div style={{fontSize:'0.6rem',fontWeight:700,color:'rgba(255,255,255,0.55)',letterSpacing:'0.12em',marginBottom:'4px'}}>CONSOLIDATED WEALTH</div>
+                          <div style={{fontSize:'2.5rem',fontWeight:800,color:'white',letterSpacing:'-2px',lineHeight:1.1}}>{fmt(wealth(hFilter))}</div>
+                        </div>
+                        <PeriodPills value={hStatPeriod} onChange={setHStatPeriod}/>
+                      </div>
+                      <div style={{display:'flex',gap:'1.5rem',marginTop:'1.1rem'}}>
+                        <div><div style={{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}}>IN</div><div style={{fontSize:'1rem',fontWeight:700,color:'#A7F3D0'}}>{fmt(hStats.inc)}</div></div>
+                        <div style={{width:'1px',background:'rgba(255,255,255,0.15)'}}/>
+                        <div><div style={{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}}>OUT</div><div style={{fontSize:'1rem',fontWeight:700,color:'#FCA5A5'}}>{fmt(hStats.spd)}</div></div>
+                        <div style={{width:'1px',background:'rgba(255,255,255,0.15)'}}/>
+                        <div><div style={{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}}>SAVED</div><div style={{fontSize:'1rem',fontWeight:700,color:'white'}}>{fmt(Math.max(0,hStats.inc-hStats.spd))}</div></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {actH.length>0&&(
+                    <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                      <Chip label="All" active={!hFilter} onClick={()=>setHFilter(null)}/>
+                      {actH.map(h=><Chip key={h.id} label={h.name} active={hFilter===h.id} onClick={()=>setHFilter(hFilter===h.id?null:h.id)}/>)}
+                    </div>
+                  )}
+
+                  <Card>
+                    <div style={{display:'flex',background:C.bg,borderRadius:'12px',padding:'3px',marginBottom:'0.9rem'}}>
+                      {[['income','Income',C.green],['spending','Spending',C.red],['net','Net Savings',C.accent]].map(([m,l,col])=>(
+                        <button key={m} onClick={()=>setHMetric(m)} style={{flex:1,padding:'0.4rem 0.25rem',borderRadius:'9px',border:'none',background:hMetric===m?'white':'transparent',color:hMetric===m?col:C.muted,cursor:'pointer',fontWeight:hMetric===m?700:400,fontSize:'0.73rem',boxShadow:hMetric===m?'0 1px 6px rgba(0,0,0,0.08)':'none',transition:'all .15s'}}>
+                          {l}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.75rem',flexWrap:'wrap',gap:'0.5rem'}}>
+                      <div>
+                        <div style={{fontWeight:700,fontSize:'0.88rem',color:C.text}}>{metricLabel(hMetric)} Trend</div>
+                        <div style={{fontSize:'0.65rem',color:C.sub,marginTop:'1px'}}>Hover or tap a point to see amount</div>
+                      </div>
+                      <div style={{display:'flex',gap:'0.4rem',alignItems:'center'}}>
+                        <div style={{display:'flex',background:C.bg,borderRadius:'9px',padding:'2px',gap:'1px'}}>
+                          {[['bar','▊'],['line','∿']].map(([v,ic])=>(
+                            <button key={v} onClick={()=>setHChartType(v)} style={{padding:'0.22rem 0.5rem',borderRadius:'7px',border:'none',background:hChartType===v?'white':'transparent',color:hChartType===v?C.accent:C.muted,cursor:'pointer',fontSize:'0.8rem',fontWeight:700,boxShadow:hChartType===v?'0 1px 4px rgba(0,0,0,0.08)':'none'}}>{ic}</button>
+                          ))}
+                        </div>
+                        <PeriodPills value={hPeriod} onChange={setHPeriod}/>
+                      </div>
+                    </div>
+                    {hChartType==='bar'?(
+                      <ResponsiveContainer width="100%" height={160}>
+                        <BarChart data={hChartData} margin={{top:4,right:4,left:-22,bottom:0}}>
+                          <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false}/>
+                          <XAxis dataKey="name" tick={axisStyle} axisLine={false} tickLine={false}/>
+                          <YAxis tickFormatter={fmtS} tick={axisStyle} axisLine={false} tickLine={false} domain={[0,'auto']}/>
+                          <Tooltip content={<SingleTooltip/>} contentStyle={ttStyle} cursor={{fill:`${metricColor(hMetric)}12`}}/>
+                          <Bar dataKey="Value" fill={metricColor(hMetric)} radius={[6,6,0,0]} maxBarSize={32}/>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ):(
+                      <ResponsiveContainer width="100%" height={160}>
+                        <LineChart data={hChartData} margin={{top:4,right:4,left:-22,bottom:0}}>
+                          <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false}/>
+                          <XAxis dataKey="name" tick={axisStyle} axisLine={false} tickLine={false}/>
+                          <YAxis tickFormatter={fmtS} tick={axisStyle} axisLine={false} tickLine={false} domain={[0,'auto']}/>
+                          <Tooltip content={<SingleTooltip/>} contentStyle={ttStyle}/>
+                          <Line type="monotone" dataKey="Value" stroke={metricColor(hMetric)} strokeWidth={2.5} dot={{r:3,fill:metricColor(hMetric),strokeWidth:0}} activeDot={{r:5}}/>
+                        </LineChart>
+                      </ResponsiveContainer>
+                    )}
+                  </Card>
+
+                  {actH.length>0?(
+                    <Card>
+                      <div style={{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'0.85rem'}}>Your Holders</div>
+                      {actH.map((h,i)=>(
+                        <div key={h.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'0.65rem 0',borderBottom:i<actH.length-1?`1px solid ${C.border}`:'none'}}>
+                          <div style={{display:'flex',alignItems:'center',gap:'0.75rem'}}>
+                            <div style={{width:'38px',height:'38px',borderRadius:'12px',background:h.isPrimary?C.accentBg:C.bg,border:`1.5px solid ${h.isPrimary?C.accent:C.border}`,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:'0.92rem',color:h.isPrimary?C.accent:C.sub}}>
+                              {h.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <div style={{fontWeight:600,fontSize:'0.88rem',color:C.text}}>{h.name}</div>
+                              {h.isPrimary&&<div style={{fontSize:'0.6rem',color:C.accent,marginTop:'1px'}}>Primary</div>}
+                            </div>
+                          </div>
+                          <div style={{fontWeight:800,fontSize:'0.98rem',color:C.text}}>{fmt(h.balance)}</div>
+                        </div>
+                      ))}
+                    </Card>
+                  ):(
+                    <div style={{background:'white',borderRadius:'20px',padding:'2.5rem 1.5rem',textAlign:'center',border:`1.5px dashed ${C.border}`}}>
+                      <div style={{fontSize:'2rem',marginBottom:'0.75rem'}}>💳</div>
+                      <div style={{fontWeight:700,color:C.text,marginBottom:'0.4rem'}}>No holders yet</div>
+                      <div style={{fontSize:'0.78rem',color:C.sub}}>Open the ☰ menu to add your first money holder</div>
+                    </div>
+                  )}
+                </>)}
+
+                {/* ── ANALYTICS ── */}
+                {view==='analytics'&&(<>
+
+                  {/* Deep Research toggle */}
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <div style={{fontWeight:700,fontSize:'0.95rem',color:C.text}}>Analytics</div>
+                    <button onClick={()=>setDeepMode(d=>!d)}
+                      style={{display:'flex',alignItems:'center',gap:'6px',padding:'0.45rem 1rem',borderRadius:'999px',border:`1.5px solid ${deepMode?C.accent:C.border}`,background:deepMode?C.accent:'white',color:deepMode?'white':C.sub,cursor:'pointer',fontWeight:700,fontSize:'0.75rem',boxShadow:deepMode?`0 4px 16px ${C.accent}40`:'none',transition:'all .2s'}}>
+                      🔬 {deepMode?'Exit Deep Research':'Deep Research'}
+                    </button>
+                  </div>
+
+                  {/* ── DEEP RESEARCH MODE ── */}
+                  {deepMode&&(
+                    <div style={{display:'flex',flexDirection:'column',gap:'1rem'}}>
+                      {/* DR header */}
+                      <div style={{background:`linear-gradient(135deg,#312E81,#4F46E5)`,borderRadius:'20px',padding:'1.25rem',color:'white'}}>
+                        <div style={{fontSize:'0.6rem',letterSpacing:'0.12em',opacity:.6,marginBottom:'4px'}}>DEEP RESEARCH MODE</div>
+                        <div style={{fontWeight:800,fontSize:'1.1rem',marginBottom:'2px'}}>Monthly Analysis</div>
+                        <div style={{fontSize:'0.72rem',opacity:.7}}>Compare months, drill into buckets, spot trends</div>
+                      </div>
+
+                      {/* DR Controls */}
+                      <Card>
+                        <div style={{display:'flex',flexDirection:'column',gap:'0.75rem'}}>
+                          <div>
+                            <SLabel>METRIC</SLabel>
+                            <div style={{display:'flex',background:C.bg,borderRadius:'12px',padding:'3px'}}>
+                              {[['income','Income',C.green],['spending','Spending',C.red],['net','Net Savings',C.accent]].map(([m,l,col])=>(
+                                <button key={m} onClick={()=>setDrMetric(m)} style={{flex:1,padding:'0.4rem 0.25rem',borderRadius:'9px',border:'none',background:drMetric===m?'white':'transparent',color:drMetric===m?col:C.muted,cursor:'pointer',fontWeight:drMetric===m?700:400,fontSize:'0.73rem',boxShadow:drMetric===m?'0 1px 6px rgba(0,0,0,0.08)':'none',transition:'all .15s'}}>
+                                  {l}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.6rem'}}>
+                            <div>
+                              <SLabel>HOLDER</SLabel>
+                              <FSelect value={drHolder||''} onChange={e=>setDrHolder(e.target.value||null)}>
+                                <option value="">All Holders</option>
+                                {actH.map(h=><option key={h.id} value={h.id}>{h.name}</option>)}
+                              </FSelect>
+                            </div>
+                            <div>
+                              <SLabel>BUCKET (spending only)</SLabel>
+                              <FSelect value={drBucket||''} onChange={e=>setDrBucket(e.target.value||null)}>
+                                <option value="">All Buckets</option>
+                                {buckets.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}
+                              </FSelect>
+                            </div>
+                          </div>
+                          <div>
+                            <SLabel>SHOW LAST N MONTHS</SLabel>
+                            <div style={{display:'flex',gap:'5px',flexWrap:'wrap'}}>
+                              {[3,6,12,24].map(n=>(
+                                <button key={n} onClick={()=>setDrMonths(n)}
+                                  style={{padding:'4px 12px',borderRadius:'999px',border:`1px solid ${drMonths===n?C.accent:C.border}`,background:drMonths===n?C.accent:'white',color:drMonths===n?'white':C.sub,cursor:'pointer',fontSize:'0.7rem',fontWeight:700}}>
+                                  {n}M
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </Card>
+
+                      {/* DR Multi-line chart: Income, Spending, Net together */}
+                      <Card>
+                        <div style={{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'4px'}}>
+                          {metricLabel(drMetric)} — Last {drMonths} months
+                        </div>
+                        <div style={{fontSize:'0.65rem',color:C.sub,marginBottom:'0.85rem'}}>Tap bars to compare specific months below</div>
+                        <ResponsiveContainer width="100%" height={180}>
+                          <BarChart data={drData} margin={{top:4,right:4,left:-22,bottom:0}}>
+                            <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false}/>
+                            <XAxis dataKey="name" tick={axisStyle} axisLine={false} tickLine={false}/>
+                            <YAxis tickFormatter={fmtS} tick={axisStyle} axisLine={false} tickLine={false} domain={[0,'auto']}/>
+                            <Tooltip content={<DRTooltip/>} contentStyle={ttStyle}/>
+                            <Bar dataKey="Value" fill={metricColor(drMetric)} radius={[6,6,0,0]} maxBarSize={28}/>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </Card>
+
+                      {/* Combined trend chart */}
+                      <Card>
+                        <div style={{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'0.85rem'}}>Income vs Spending vs Net</div>
+                        <ResponsiveContainer width="100%" height={180}>
+                          <LineChart data={drData} margin={{top:4,right:4,left:-22,bottom:0}}>
+                            <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false}/>
+                            <XAxis dataKey="name" tick={axisStyle} axisLine={false} tickLine={false}/>
+                            <YAxis tickFormatter={fmtS} tick={axisStyle} axisLine={false} tickLine={false} domain={[0,'auto']}/>
+                            <Tooltip content={<DRTooltip/>} contentStyle={ttStyle}/>
+                            <Line type="monotone" dataKey="Income" stroke={C.green} strokeWidth={2} dot={false} activeDot={{r:4}}/>
+                            <Line type="monotone" dataKey="Spending" stroke={C.red} strokeWidth={2} dot={false} activeDot={{r:4}}/>
+                            <Line type="monotone" dataKey="Net" stroke={C.accent} strokeWidth={2} dot={false} activeDot={{r:4}}/>
+                          </LineChart>
+                        </ResponsiveContainer>
+                        <div style={{display:'flex',gap:'1rem',justifyContent:'center',marginTop:'0.65rem'}}>
+                          {[['Income',C.green],['Spending',C.red],['Net',C.accent]].map(([l,c])=>(
+                            <div key={l} style={{display:'flex',alignItems:'center',gap:'5px',fontSize:'0.68rem',color:C.sub}}>
+                              <div style={{width:'16px',height:'3px',background:c,borderRadius:'2px'}}/>
+                              {l}
+                            </div>
+                          ))}
+                        </div>
+                      </Card>
+
+                      {/* Month Comparison */}
+                      <Card>
+                        <div style={{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'0.75rem'}}>🔁 Compare Two Months</div>
+                        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.6rem',marginBottom:'0.85rem'}}>
+                          <div>
+                            <SLabel>MONTH A</SLabel>
+                            <FSelect value={drCompareA} onChange={e=>setDrCompareA(e.target.value)}>
+                              <option value="">Pick month</option>
+                              {availMonths.slice().reverse().map(m=><option key={m.key} value={m.key}>{m.label}</option>)}
+                            </FSelect>
+                          </div>
+                          <div>
+                            <SLabel>MONTH B</SLabel>
+                            <FSelect value={drCompareB} onChange={e=>setDrCompareB(e.target.value)}>
+                              <option value="">Pick month</option>
+                              {availMonths.slice().reverse().map(m=><option key={m.key} value={m.key}>{m.label}</option>)}
+                            </FSelect>
+                          </div>
+                        </div>
+                        {drCompareA&&drCompareB&&drCompareA!==drCompareB?(()=>{
+                          const aInc=getDRCompareStats(drCompareA,'income'), aSpd=getDRCompareStats(drCompareA,'spending'), aNet=getDRCompareStats(drCompareA,'net');
+                          const bInc=getDRCompareStats(drCompareB,'income'), bSpd=getDRCompareStats(drCompareB,'spending'), bNet=getDRCompareStats(drCompareB,'net');
+                          const aLabel=availMonths.find(m=>m.key===drCompareA)?.label||drCompareA;
+                          const bLabel=availMonths.find(m=>m.key===drCompareB)?.label||drCompareB;
+                          const Row=({label,va,vb})=>{
+                            const diff=va-vb; const pct=vb>0?((Math.abs(diff)/vb)*100).toFixed(1):'—';
+                            return (
+                              <div style={{display:'grid',gridTemplateColumns:'80px 1fr 1fr 80px',gap:'0.4rem',alignItems:'center',padding:'0.5rem 0',borderBottom:`1px solid ${C.border}`}}>
+                                <span style={{fontSize:'0.7rem',color:C.sub,fontWeight:600}}>{label}</span>
+                                <span style={{fontSize:'0.82rem',fontWeight:700,color:C.text,textAlign:'right'}}>{fmt(va)}</span>
+                                <span style={{fontSize:'0.82rem',fontWeight:700,color:C.text,textAlign:'right'}}>{fmt(vb)}</span>
+                                <span style={{fontSize:'0.68rem',fontWeight:700,color:diff>0?C.green:diff<0?C.red:C.muted,textAlign:'right'}}>{diff===0?'—':`${diff>0?'+':'-'}${pct}%`}</span>
+                              </div>
+                            );
+                          };
+                          return (
+                            <div>
+                              <div style={{display:'grid',gridTemplateColumns:'80px 1fr 1fr 80px',gap:'0.4rem',marginBottom:'4px'}}>
+                                <span/>
+                                <span style={{fontSize:'0.65rem',fontWeight:700,color:C.accent,textAlign:'right'}}>{aLabel}</span>
+                                <span style={{fontSize:'0.65rem',fontWeight:700,color:C.sub,textAlign:'right'}}>{bLabel}</span>
+                                <span style={{fontSize:'0.65rem',color:C.muted,textAlign:'right'}}>Δ</span>
+                              </div>
+                              <Row label="Income" va={aInc} vb={bInc}/>
+                              <Row label="Spending" va={aSpd} vb={bSpd}/>
+                              <Row label="Net" va={aNet} vb={bNet}/>
+                            </div>
+                          );
+                        })():(
+                          <div style={{fontSize:'0.78rem',color:C.muted,textAlign:'center',padding:'0.75rem 0'}}>Select two different months to compare</div>
+                        )}
+                      </Card>
+
+                      {/* Bucket breakdown per selected month */}
+                      {drCompareA&&(()=>{
+                        const bd=getDRBucketBreakdown(drCompareA);
+                        const bdTotal=bd.reduce((s,b)=>s+b.total,0);
+                        const aLabel=availMonths.find(m=>m.key===drCompareA)?.label||drCompareA;
+                        if(!bd.length) return null;
+                        return (
+                          <Card>
+                            <div style={{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'4px'}}>🪣 Bucket Breakdown — {aLabel}</div>
+                            <div style={{fontSize:'0.65rem',color:C.sub,marginBottom:'0.85rem'}}>Spending distribution for month A</div>
+                            {bd.map(b=>{
+                              const pct=bdTotal>0?((b.total/bdTotal)*100).toFixed(1):0;
+                              return (
+                                <div key={b.id} style={{marginBottom:'0.65rem'}}>
+                                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}}>
+                                    <div style={{display:'flex',alignItems:'center',gap:'7px'}}>
+                                      <div style={{width:'9px',height:'9px',borderRadius:'3px',background:b.color}}/>
+                                      <span style={{fontSize:'0.8rem',fontWeight:600,color:C.text}}>{b.name}</span>
+                                    </div>
+                                    <div>
+                                      <span style={{fontSize:'0.8rem',fontWeight:700,color:C.text}}>{fmt(b.total)}</span>
+                                      <span style={{fontSize:'0.62rem',color:C.muted,marginLeft:'5px'}}>{pct}%</span>
+                                    </div>
+                                  </div>
+                                  <div style={{height:'5px',background:C.bg,borderRadius:'3px',overflow:'hidden'}}>
+                                    <div style={{height:'100%',width:`${pct}%`,background:b.color,borderRadius:'3px',transition:'width .4s'}}/>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </Card>
+                        );
+                      })()}
+
+                      {/* Monthly table */}
+                      <Card>
+                        <div style={{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'0.85rem'}}>📅 Monthly Table — Last {drMonths} months</div>
+                        <div style={{overflowX:'auto'}}>
+                          <table style={{width:'100%',borderCollapse:'collapse',fontSize:'0.73rem'}}>
+                            <thead>
+                              <tr>
+                                {['Month','Income','Spending','Net'].map(h=>(
+                                  <th key={h} style={{padding:'0.4rem 0.5rem',textAlign:'right',color:C.muted,fontWeight:700,fontSize:'0.62rem',letterSpacing:'0.06em',whiteSpace:'nowrap',borderBottom:`1px solid ${C.border}`}}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {[...drData].reverse().map((row,i)=>(
+                                <tr key={row.key} style={{background:i%2===0?'transparent':C.bg+'80'}}>
+                                  <td style={{padding:'0.45rem 0.5rem',fontWeight:700,color:C.text,whiteSpace:'nowrap'}}>{row.name}</td>
+                                  <td style={{padding:'0.45rem 0.5rem',textAlign:'right',color:C.green,fontWeight:600}}>{fmtS(row.Income)}</td>
+                                  <td style={{padding:'0.45rem 0.5rem',textAlign:'right',color:C.red,fontWeight:600}}>{fmtS(row.Spending)}</td>
+                                  <td style={{padding:'0.45rem 0.5rem',textAlign:'right',color:C.accent,fontWeight:700}}>{fmtS(row.Net)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </Card>
+                    </div>
+                  )}
+
+                  {/* ── NORMAL ANALYTICS (hidden in deep mode) ── */}
+                  {!deepMode&&(<>
+                    <Card style={{padding:'1rem'}}>
+                      <div style={{fontSize:'0.65rem',fontWeight:700,color:C.muted,letterSpacing:'0.08em',marginBottom:'0.5rem'}}>FILTER BY HOLDER</div>
+                      <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'0.75rem'}}>
+                        <Chip label="All Holders" active={!aHFilter} onClick={()=>setAHFilter(null)}/>
+                        {actH.map(h=><Chip key={h.id} label={h.name} active={aHFilter===h.id} onClick={()=>setAHFilter(aHFilter===h.id?null:h.id)}/>)}
+                      </div>
+                      <div style={{fontSize:'0.65rem',fontWeight:700,color:C.muted,letterSpacing:'0.08em',marginBottom:'0.5rem'}}>FILTER BY BUCKET</div>
+                      <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                        <Chip label="All Buckets" active={!aBFilter} onClick={()=>setABFilter(null)}/>
+                        {buckets.map(b=><Chip key={b.id} label={b.name} active={aBFilter===b.id} dot={b.color} onClick={()=>setABFilter(aBFilter===b.id?null:b.id)}/>)}
+                      </div>
+                    </Card>
+
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'0.5rem'}}>
+                      {[{l:'INCOME',v:fmt(actT.filter(t=>t.type==='income'&&(!aHFilter||t.holderId===aHFilter)).reduce((s,t)=>s+t.amount,0)),col:C.green},
+                        {l:'SPENDING',v:fmt(actT.filter(t=>t.type==='spending'&&(!aHFilter||t.holderId===aHFilter)&&(!aBFilter||t.bucketId===aBFilter)).reduce((s,t)=>s+t.amount,0)),col:C.red},
+                        {l:'BALANCE',v:fmt(wealth(aHFilter)),col:C.accent}].map(({l,v,col})=>(
+                        <div key={l} style={{background:'white',borderRadius:'16px',padding:'0.85rem 0.75rem',border:`1px solid ${C.border}`,textAlign:'center',boxShadow:'0 2px 8px rgba(0,0,0,0.04)'}}>
+                          <div style={{fontSize:'0.55rem',fontWeight:700,color:C.muted,letterSpacing:'0.1em',marginBottom:'4px'}}>{l}</div>
+                          <div style={{fontSize:'0.82rem',fontWeight:800,color:col}}>{v}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{display:'flex',background:'white',borderRadius:'14px',padding:'4px',border:`1px solid ${C.border}`,boxShadow:'0 2px 8px rgba(0,0,0,0.04)'}}>
+                      {[['flow','📈 Flow'],['buckets','🪣 Buckets']].map(([v,l])=>(
+                        <button key={v} onClick={()=>setAView(v)} style={{flex:1,padding:'0.5rem',borderRadius:'10px',border:'none',background:aView===v?C.accent:'transparent',color:aView===v?'white':C.sub,cursor:'pointer',fontWeight:700,fontSize:'0.82rem',transition:'all .15s'}}>
+                          {l}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Flow chart */}
+                    {aView==='flow'&&(
+                      <Card>
+                        <div style={{display:'flex',background:C.bg,borderRadius:'12px',padding:'3px',marginBottom:'0.9rem'}}>
+                          {[['income','Income',C.green],['spending','Spending',C.red],['net','Net Savings',C.accent]].map(([m,l,col])=>(
+                            <button key={m} onClick={()=>setAMetric(m)} style={{flex:1,padding:'0.4rem 0.25rem',borderRadius:'9px',border:'none',background:aMetric===m?'white':'transparent',color:aMetric===m?col:C.muted,cursor:'pointer',fontWeight:aMetric===m?700:400,fontSize:'0.73rem',boxShadow:aMetric===m?'0 1px 6px rgba(0,0,0,0.08)':'none',transition:'all .15s'}}>
+                              {l}
+                            </button>
+                          ))}
+                        </div>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.75rem',flexWrap:'wrap',gap:'0.5rem'}}>
+                          <div style={{fontWeight:700,fontSize:'0.88rem',color:C.text}}>{aMetric==='income'?'Income':aMetric==='spending'?'Spending':'Net Savings'} Trend</div>
+                          <div style={{display:'flex',gap:'0.4rem',alignItems:'center'}}>
+                            <div style={{display:'flex',background:C.bg,borderRadius:'9px',padding:'2px',gap:'1px'}}>
+                              {[['bar','▊'],['line','∿']].map(([v,ic])=>(
+                                <button key={v} onClick={()=>setAChartType(v)} style={{padding:'0.22rem 0.5rem',borderRadius:'7px',border:'none',background:aChartType===v?'white':'transparent',color:aChartType===v?C.accent:C.muted,cursor:'pointer',fontSize:'0.8rem',fontWeight:700,boxShadow:aChartType===v?'0 1px 4px rgba(0,0,0,0.08)':'none'}}>
+                                  {ic}
+                                </button>
+                              ))}
+                            </div>
+                            <PeriodPills value={aPeriod} onChange={setAPeriod}/>
+                          </div>
+                        </div>
+                        {aChartType==='bar'?(
+                          <ResponsiveContainer width="100%" height={160}>
+                            <BarChart data={aChartData} margin={{top:4,right:4,left:-22,bottom:0}}>
+                              <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false}/>
+                              <XAxis dataKey="name" tick={axisStyle} axisLine={false} tickLine={false}/>
+                              <YAxis tickFormatter={fmtS} tick={axisStyle} axisLine={false} tickLine={false} domain={[0,'auto']}/>
+                              <Tooltip content={<ASingleTooltip/>} contentStyle={ttStyle} cursor={{fill:`${aMetricColor}12`}}/>
+                              <Bar dataKey="Value" fill={aMetricColor} radius={[6,6,0,0]} maxBarSize={32}/>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        ):(
+                          <ResponsiveContainer width="100%" height={160}>
+                            <LineChart data={aChartData} margin={{top:4,right:4,left:-22,bottom:0}}>
+                              <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false}/>
+                              <XAxis dataKey="name" tick={axisStyle} axisLine={false} tickLine={false}/>
+                              <YAxis tickFormatter={fmtS} tick={axisStyle} axisLine={false} tickLine={false} domain={[0,'auto']}/>
+                              <Tooltip content={<ASingleTooltip/>} contentStyle={ttStyle}/>
+                              <Line type="monotone" dataKey="Value" stroke={aMetricColor} strokeWidth={2.5} dot={{r:3,fill:aMetricColor,strokeWidth:0}} activeDot={{r:5}}/>
+                            </LineChart>
+                          </ResponsiveContainer>
+                        )}
+                      </Card>
+                    )}
+
+                    {/* Buckets view — now with period filter */}
+                    {aView==='buckets'&&(
+                      <>
+                        <Card style={{padding:'0.85rem 1rem'}}>
+                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'0.5rem'}}>
+                            <div style={{fontSize:'0.65rem',fontWeight:700,color:C.muted,letterSpacing:'0.08em'}}>TIME PERIOD</div>
+                            <PeriodPills value={bktPeriod} onChange={setBktPeriod}/>
+                          </div>
+                        </Card>
+                        {bStats.length===0?(
+                          <div style={{background:'white',borderRadius:'20px',padding:'2rem',textAlign:'center',border:`1.5px dashed ${C.border}`}}>
+                            <div style={{fontSize:'2rem',marginBottom:'0.65rem'}}>🪣</div>
+                            <div style={{fontWeight:700,color:C.text,marginBottom:'4px'}}>No spending data for this period</div>
+                            <div style={{fontSize:'0.75rem',color:C.sub}}>Try a different time range or add spending entries</div>
+                          </div>
+                        ):(
+                          <Card>
+                            <div style={{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'1rem'}}>Spending by Bucket</div>
+                            <div style={{display:'flex',justifyContent:'center',marginBottom:'1rem'}}>
+                              <PieChart width={180} height={180}>
+                                <Pie data={bStats} dataKey="total" cx="50%" cy="50%" innerRadius={52} outerRadius={82} paddingAngle={3}>
+                                  {bStats.map(b=><Cell key={b.id} fill={b.color}/>)}
+                                </Pie>
+                                <Tooltip formatter={v=>fmt(v)} contentStyle={{background:'white',border:`1px solid ${C.border}`,borderRadius:'10px',fontSize:'0.78rem'}}/>
+                              </PieChart>
+                            </div>
+                            {bStats.map(b=>{
+                              const pct=bTotal>0?((b.total/bTotal)*100).toFixed(1):0;
+                              return (
+                                <div key={b.id} style={{marginBottom:'0.75rem'}}>
+                                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'5px'}}>
+                                    <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                                      <div style={{width:'10px',height:'10px',borderRadius:'3px',background:b.color,flexShrink:0}}/>
+                                      <span style={{fontSize:'0.83rem',fontWeight:600,color:C.text}}>{b.name}</span>
+                                    </div>
+                                    <div>
+                                      <span style={{fontSize:'0.83rem',fontWeight:700,color:C.text}}>{fmt(b.total)}</span>
+                                      <span style={{fontSize:'0.65rem',color:C.muted,marginLeft:'6px'}}>{pct}%</span>
+                                    </div>
+                                  </div>
+                                  <div style={{height:'5px',background:C.bg,borderRadius:'3px',overflow:'hidden'}}>
+                                    <div style={{height:'100%',width:`${pct}%`,background:b.color,borderRadius:'3px',transition:'width .4s'}}/>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </Card>
+                        )}
+                      </>
+                    )}
+
+                    {/* Transaction list */}
+                    <Card>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.75rem',flexWrap:'wrap',gap:'0.5rem'}}>
+                        <div style={{fontWeight:700,fontSize:'0.88rem',color:C.text}}>Transactions <span style={{fontWeight:400,color:C.muted,fontSize:'0.72rem'}}>({filteredATxns.length})</span></div>
+                        <PeriodPills value={aTxnPeriod} onChange={setATxnPeriod}/>
+                      </div>
+                      {filteredATxns.length===0
+                        ?<div style={{color:C.muted,fontSize:'0.8rem',textAlign:'center',padding:'1.5rem 0'}}>No transactions for this period</div>
+                        :filteredATxns.map(t=><TxnRow key={t.id} t={t} onDel={()=>delTxn(t.id)}/>)
+                      }
+                    </Card>
+
+                    {delT.length>0&&(
+                      <Card>
+                        <div style={{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'0.85rem'}}>
+                          🗑 Recycle Bin <span style={{fontWeight:400,color:C.muted,fontSize:'0.72rem'}}>({delT.length})</span>
+                        </div>
+                        {delT.map(t=><TxnRow key={t.id} t={t} onRest={()=>restTxn(t.id)}/>)}
+                      </Card>
+                    )}
+                  </>)}
+                </>)}
+              </main>
+
+              {/* Bottom nav */}
+              <nav style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:'480px',background:'rgba(255,255,255,0.95)',backdropFilter:'blur(16px)',borderTop:`1px solid ${C.border}`,display:'flex',alignItems:'center',zIndex:90,height:'64px',boxShadow:'0 -2px 16px rgba(0,0,0,0.06)'}}>
+                <button onClick={()=>setView('home')} style={{flex:1,height:'100%',background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'2px',color:view==='home'?C.accent:C.muted}}>
+                  <span style={{fontSize:'1.1rem'}}>🏠</span>
+                  <span style={{fontSize:'0.6rem',fontWeight:view==='home'?700:400}}>Home</span>
+                </button>
+                <div style={{flex:'0 0 80px',display:'flex',justifyContent:'center',alignItems:'center'}}>
+                  <button onClick={()=>{setFabOpen(true);setFabMode(null);}}
+                    style={{width:'52px',height:'52px',borderRadius:'16px',background:C.accent,border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:`0 6px 20px rgba(79,70,229,0.4)`,transform:'translateY(-10px)',color:'white',flexShrink:0,lineHeight:1}}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                      <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                    </svg>
+                  </button>
+                </div>
+                <button onClick={()=>setView('analytics')} style={{flex:1,height:'100%',background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'2px',color:view==='analytics'?C.accent:C.muted}}>
+                  <span style={{fontSize:'1.1rem'}}>📊</span>
+                  <span style={{fontSize:'0.6rem',fontWeight:view==='analytics'?700:400}}>Analytics</span>
+                </button>
+              </nav>
+            </div>
+          );
+        }
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<Jimikki />);
+    </script>
+</body>
+</html>
