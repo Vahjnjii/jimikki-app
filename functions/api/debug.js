@@ -4,6 +4,7 @@ export async function onRequestGet(context) {
   try {
     const rawKey = context.env.GOOGLE_SERVICE_KEY || '';
     const email = context.env.GOOGLE_SERVICE_EMAIL || '';
+    const folderId = context.env.GOOGLE_DRIVE_FOLDER_ID || '';
 
     // ── Get Token ──
     const pemKey = rawKey.replace(/\\n/g, '\n');
@@ -23,7 +24,7 @@ export async function onRequestGet(context) {
     const header = btoa(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
     const payload = btoa(JSON.stringify({
       iss: email,
-      scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/drive.file',
+      scope: 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets',
       aud: 'https://oauth2.googleapis.com/token',
       exp: now + 3600,
       iat: now
@@ -48,59 +49,41 @@ export async function onRequestGet(context) {
     });
     const tokenData = await tokenRes.json();
     const token = tokenData.access_token;
-    results.token = token ? 'OK' : 'FAILED';
+    results.token = token ? 'OK ✅' : 'FAILED';
 
-    // ── Test 1: Drive API basic test ──
-    const driveRes = await fetch(
-      'https://www.googleapis.com/drive/v3/files?pageSize=1',
-      { headers: { 'Authorization': `Bearer ${token}` } }
-    );
-    const driveData = await driveRes.json();
-    results.drive_api = driveRes.ok
-      ? 'SUCCESS ✅'
-      : 'FAILED ❌ code=' + driveData.error?.code + ' msg=' + driveData.error?.message;
-
-    // ── Test 2: Check folder access ──
-    const folderId = context.env.GOOGLE_DRIVE_FOLDER_ID;
-    const folderRes = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${folderId}?fields=id,name,permissions`,
-      { headers: { 'Authorization': `Bearer ${token}` } }
-    );
-    const folderData = await folderRes.json();
-    results.folder_access = folderRes.ok
-      ? 'SUCCESS ✅ name=' + folderData.name
-      : 'FAILED ❌ code=' + folderData.error?.code + ' msg=' + folderData.error?.message;
-
-    // ── Test 3: Create sheet ──
-    const sheetRes = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
+    // ── Test: Create sheet via DRIVE API (not Sheets API) ──
+    const driveCreateRes = await fetch('https://www.googleapis.com/drive/v3/files', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        properties: { title: 'Jimikki Debug Test' }
+        name: 'Jimikki Debug Test — delete me',
+        mimeType: 'application/vnd.google-apps.spreadsheet',
+        parents: folderId ? [folderId] : []
       })
     });
-    const sheetData = await sheetRes.json();
-    if (sheetData.spreadsheetId) {
-      results.sheet_create = 'SUCCESS ✅ id=' + sheetData.spreadsheetId;
+    const driveCreateData = await driveCreateRes.json();
 
-      // Test 4: Move to folder
-      const moveRes = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${sheetData.spreadsheetId}?addParents=${folderId}&removeParents=root&fields=id,parents`,
+    if (driveCreateData.id) {
+      results.sheet_via_drive = 'SUCCESS ✅ id=' + driveCreateData.id;
+      results.sheet_url = 'https://docs.google.com/spreadsheets/d/' + driveCreateData.id;
+
+      // Test writing to the sheet
+      const writeRes = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${driveCreateData.id}/values/A1?valueInputOption=RAW`,
         {
-          method: 'PATCH',
+          method: 'PUT',
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({})
+          body: JSON.stringify({ values: [['TEST ✅', 'Sheet is working!']] })
         }
       );
-      const moveData = await moveRes.json();
-      results.folder_move = moveRes.ok
-        ? 'SUCCESS ✅'
-        : 'FAILED ❌ code=' + moveData.error?.code + ' msg=' + moveData.error?.message;
+      const writeData = await writeRes.json();
+      results.write_test = writeRes.ok ? 'SUCCESS ✅' : 'FAILED ❌ ' + JSON.stringify(writeData.error);
+
     } else {
-      results.sheet_create = 'FAILED ❌ code=' + sheetData.error?.code + ' msg=' + sheetData.error?.message + ' status=' + sheetData.error?.status;
+      results.sheet_via_drive = 'FAILED ❌ code=' + driveCreateData.error?.code + ' msg=' + driveCreateData.error?.message;
     }
 
   } catch (e) {
