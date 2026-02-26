@@ -2,8 +2,9 @@
 // Handles: create sheet per user, share with user, full beautiful rebuild
 
 const SCOPES = [
-  'https://www.googleapis.com/auth/spreadsheets',
-  'https://www.googleapis.com/auth/drive'
+  'https://www.googleapis.com/auth/drive',
+  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/spreadsheets'
 ];
 
 // ── JWT + Access Token ────────────────────────────────────────────────────
@@ -59,31 +60,25 @@ async function getAccessToken(env) {
   return data.access_token;
 }
 
-// ── Create new Sheet ──────────────────────────────────────────────────────
+// ── Create new Sheet via Drive API (avoids Sheets API permission issue) ──
 async function createSheet(token, userName, folderId) {
-  const res = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
+  // Step 1: Create file via Drive API as Google Sheets MIME type
+  const parents = folderId ? [folderId] : [];
+  const res = await fetch('https://www.googleapis.com/drive/v3/files', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      properties: { title: `Jimikki — ${userName}` },
-      sheets: [{ properties: { title: 'Finance', sheetId: 0 } }]
+      name: `Jimikki — ${userName}`,
+      mimeType: 'application/vnd.google-apps.spreadsheet',
+      parents: parents
     })
   });
   const data = await res.json();
-  if (!data.spreadsheetId) throw new Error('Sheet creation failed: ' + JSON.stringify(data));
-
-  // Move to folder
-  if (folderId) {
-    await fetch(`https://www.googleapis.com/drive/v3/files/${data.spreadsheetId}?addParents=${folderId}&removeParents=root`, {
-      method: 'PATCH',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-  }
-
-  return data.spreadsheetId;
+  if (!data.id) throw new Error('Sheet creation via Drive failed: ' + JSON.stringify(data));
+  return data.id;
 }
 
 // ── Share sheet with user ─────────────────────────────────────────────────
