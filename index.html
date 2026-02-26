@@ -6,47 +6,31 @@
 <title>Jimikki</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.8.0/Recharts.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 body{background:#F4F6FB;font-family:'Inter',system-ui,sans-serif;color:#1A1D2E}
 input,select,button{font-family:inherit}
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:#E8ECF4;border-radius:4px}
+.tip{position:absolute;background:white;border:1px solid #E8ECF4;border-radius:12px;padding:8px 12px;font-size:0.75rem;pointer-events:none;box-shadow:0 4px 20px rgba(0,0,0,0.1);z-index:50;white-space:nowrap}
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script>
 const {useState,useEffect,useRef,useCallback}=React;
-const {BarChart,Bar,XAxis,YAxis,Tooltip,ResponsiveContainer,CartesianGrid,LineChart,Line,PieChart,Pie,Cell}=Recharts;
+const e=React.createElement;
 
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const fmt=n=>`₹${Math.max(0,+n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 const fmtS=n=>{const v=Math.max(0,+n||0);return v>=100000?`₹${(v/100000).toFixed(1)}L`:v>=1000?`₹${(v/1000).toFixed(1)}K`:`₹${v.toFixed(0)}`;};
 const todayStr=()=>new Date().toISOString().slice(0,10);
 const PALETTE=['#6366F1','#F43F5E','#F97316','#22C55E','#06B6D4','#A855F7','#FBBF24','#EC4899'];
-const DEF_BUCKETS=[
-  {id:'b1',name:'Food & Dining',color:'#F97316'},
-  {id:'b2',name:'Shopping',color:'#A855F7'},
-  {id:'b3',name:'Transport',color:'#06B6D4'},
-  {id:'b4',name:'Health',color:'#22C55E'},
-  {id:'b5',name:'Entertainment',color:'#F43F5E'},
-  {id:'b6',name:'Utilities',color:'#6366F1'},
-];
-const C={
-  bg:'#F4F6FB',card:'#FFFFFF',border:'#E8ECF4',
-  text:'#1A1D2E',sub:'#64748B',muted:'#A0AEC0',
-  accent:'#4F46E5',green:'#10B981',red:'#F43F5E',blue:'#3B82F6',
-  accentBg:'#EEF2FF',greenBg:'#ECFDF5',redBg:'#FFF1F2',
-};
+const DEF_BUCKETS=[{id:'b1',name:'Food & Dining',color:'#F97316'},{id:'b2',name:'Shopping',color:'#A855F7'},{id:'b3',name:'Transport',color:'#06B6D4'},{id:'b4',name:'Health',color:'#22C55E'},{id:'b5',name:'Entertainment',color:'#F43F5E'},{id:'b6',name:'Utilities',color:'#6366F1'}];
+const C={bg:'#F4F6FB',card:'#FFFFFF',border:'#E8ECF4',text:'#1A1D2E',sub:'#64748B',muted:'#A0AEC0',accent:'#4F46E5',green:'#10B981',red:'#F43F5E',blue:'#3B82F6',accentBg:'#EEF2FF',greenBg:'#ECFDF5',redBg:'#FFF1F2'};
+const metricColor=m=>m==='income'?C.green:m==='spending'?C.red:C.accent;
+const metricLabel=m=>m==='income'?'Income':m==='spending'?'Spending':'Net Savings';
 
-function lastNMonths(n){
-  const now=new Date();
-  return Array.from({length:n},(_,i)=>{
-    const d=new Date(now.getFullYear(),now.getMonth()-n+1+i,1);
-    return{label:d.toLocaleDateString('en',{month:'short',year:'2-digit'}),key:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`};
-  });
-}
+function lastNMonths(n){const now=new Date();return Array.from({length:n},(_,i)=>{const d=new Date(now.getFullYear(),now.getMonth()-n+1+i,1);return{label:d.toLocaleDateString('en',{month:'short',year:'2-digit'}),key:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`};});}
 
 function periodFilter(txns,period){
   const now=new Date(),todayKey=todayStr();
@@ -62,26 +46,141 @@ function periodFilter(txns,period){
   });
 }
 
-// ── Components ──
-const PeriodPills=({value,onChange,options})=>{
-  const opts=options||[['today','Today'],['week','Week'],['month','Month'],['year','Year'],['5year','5Y']];
-  return React.createElement('div',{style:{display:'flex',gap:'4px',flexWrap:'wrap'}},
-    opts.map(([p,l])=>React.createElement('button',{key:p,onClick:()=>onChange(p),style:{padding:'4px 10px',borderRadius:'999px',border:`1px solid ${value===p?C.accent:C.border}`,background:value===p?C.accent:'white',color:value===p?'white':C.sub,cursor:'pointer',fontSize:'0.68rem',fontWeight:700,transition:'all .15s'}},l))
+// ── SVG Bar Chart ──
+function BarChart({data,color,height=160}){
+  const [tip,setTip]=useState(null);
+  const svgRef=useRef(null);
+  if(!data||!data.length)return null;
+  const max=Math.max(...data.map(d=>d.Value),1);
+  const pw=460,ph=height,padL=46,padB=24,padT=8,padR=8;
+  const cw=pw-padL-padR,ch=ph-padB-padT;
+  const bw=Math.min(32,cw/data.length*0.6);
+  const gap=cw/data.length;
+  const yTicks=4;
+  const xOf=i=>padL+gap*i+gap/2;
+  const yOf=v=>padT+ch-(v/max)*ch;
+
+  const handleMove=(ev,i,val)=>{
+    const rect=svgRef.current.getBoundingClientRect();
+    const cx=rect.left+(xOf(i)/pw)*rect.width;
+    const cy=rect.top+(yOf(val)/ph)*rect.height;
+    setTip({x:cx,y:cy,label:data[i].name,val});
+  };
+
+  return e('div',{style:{position:'relative'}},
+    e('svg',{ref:svgRef,viewBox:`0 0 ${pw} ${ph}`,style:{width:'100%',height},onMouseLeave:()=>setTip(null)},
+      // y grid + labels
+      ...Array.from({length:yTicks+1},(_,i)=>{
+        const v=(max/yTicks)*i,y=yOf(v);
+        return e('g',{key:i},
+          e('line',{x1:padL,y1:y,x2:pw-padR,y2:y,stroke:C.border,strokeDasharray:'3 3'}),
+          e('text',{x:padL-4,y:y+3,textAnchor:'end',fontSize:9,fill:C.muted},fmtS(v))
+        );
+      }),
+      // bars
+      ...data.map((d,i)=>e('g',{key:i},
+        e('rect',{
+          x:xOf(i)-bw/2,y:yOf(d.Value),width:bw,height:Math.max(1,(d.Value/max)*ch),
+          fill:color,rx:4,opacity:tip&&tip.label===d.name?1:0.85,
+          style:{cursor:'pointer',transition:'opacity .15s'},
+          onMouseEnter:ev=>handleMove(ev,i,d.Value),
+          onTouchStart:ev=>handleMove(ev,i,d.Value)
+        }),
+        e('text',{x:xOf(i),y:ph-6,textAnchor:'middle',fontSize:9,fill:C.muted},d.name)
+      ))
+    ),
+    tip&&e('div',{className:'tip',style:{left:tip.x+8,top:tip.y-36,position:'fixed'}},
+      e('div',{style:{color:C.sub,fontSize:'0.68rem',marginBottom:'2px'}},tip.label),
+      e('div',{style:{fontWeight:800,color,fontSize:'0.85rem'}},fmt(tip.val))
+    )
   );
-};
+}
 
-const Chip=({label,active,onClick,dot})=>React.createElement('button',{onClick,style:{display:'flex',alignItems:'center',gap:'5px',padding:'4px 12px',borderRadius:'999px',border:`1px solid ${active?C.accent:C.border}`,background:active?C.accentBg:'white',color:active?C.accent:C.sub,cursor:'pointer',fontSize:'0.72rem',fontWeight:active?700:400,whiteSpace:'nowrap'}},
-  dot&&React.createElement('span',{style:{width:'7px',height:'7px',borderRadius:'50%',background:dot,display:'inline-block'}}),
-  label
-);
+// ── SVG Line Chart ──
+function LineChart({data,color,height=160,multiLines}){
+  const [tip,setTip]=useState(null);
+  const svgRef=useRef(null);
+  if(!data||!data.length)return null;
 
-const Card=({children,style={}})=>React.createElement('div',{style:{background:C.card,borderRadius:'20px',padding:'1.25rem',boxShadow:'0 2px 12px rgba(0,0,0,0.05)',border:`1px solid ${C.border}`,...style}},children);
+  const keys=multiLines?Object.keys(multiLines):['Value'];
+  const allVals=data.flatMap(d=>keys.map(k=>d[k]||0));
+  const max=Math.max(...allVals,1);
+  const pw=460,ph=height,padL=46,padB=24,padT=8,padR=8;
+  const cw=pw-padL-padR,ch=ph-padB-padT;
+  const yTicks=4;
+  const xOf=i=>padL+(i/(data.length-1||1))*cw;
+  const yOf=v=>padT+ch-(v/max)*ch;
 
-const SLabel=({children})=>React.createElement('div',{style:{fontSize:'0.62rem',fontWeight:700,color:C.muted,letterSpacing:'0.09em',marginBottom:'5px'}},children);
+  const pts=(key)=>data.map((d,i)=>`${xOf(i)},${yOf(d[key]||0)}`).join(' ');
 
-const FInput=({style={},children,...props})=>React.createElement('input',{...props,style:{width:'100%',background:C.bg,border:`1.5px solid ${C.border}`,borderRadius:'12px',padding:'0.6rem 0.85rem',color:C.text,fontSize:'0.9rem',outline:'none',boxSizing:'border-box',...style}});
+  return e('div',{style:{position:'relative'}},
+    e('svg',{ref:svgRef,viewBox:`0 0 ${pw} ${ph}`,style:{width:'100%',height},onMouseLeave:()=>setTip(null)},
+      ...Array.from({length:yTicks+1},(_,i)=>{
+        const v=(max/yTicks)*i,y=yOf(v);
+        return e('g',{key:i},
+          e('line',{x1:padL,y1:y,x2:pw-padR,y2:y,stroke:C.border,strokeDasharray:'3 3'}),
+          e('text',{x:padL-4,y:y+3,textAnchor:'end',fontSize:9,fill:C.muted},fmtS(v))
+        );
+      }),
+      keys.map(k=>{
+        const col=multiLines?multiLines[k]:color;
+        return e('g',{key:k},
+          e('polyline',{points:pts(k),fill:'none',stroke:col,strokeWidth:2.5,strokeLinejoin:'round',strokeLinecap:'round'}),
+          ...data.map((d,i)=>e('circle',{key:i,cx:xOf(i),cy:yOf(d[k]||0),r:4,fill:col,stroke:'white',strokeWidth:1.5,style:{cursor:'pointer'},
+            onMouseEnter:()=>{const rect=svgRef.current.getBoundingClientRect();setTip({x:rect.left+(xOf(i)/pw)*rect.width,y:rect.top+(yOf(d[k]||0)/ph)*rect.height,label:d.name,val:d[k]||0,col,key:k});},
+            onTouchStart:()=>{const rect=svgRef.current.getBoundingClientRect();setTip({x:rect.left+(xOf(i)/pw)*rect.width,y:rect.top+(yOf(d[k]||0)/ph)*rect.height,label:d.name,val:d[k]||0,col,key:k});}
+          }))
+        );
+      }),
+      data.map((d,i)=>e('text',{key:i,x:xOf(i),y:ph-6,textAnchor:'middle',fontSize:9,fill:C.muted},d.name))
+    ),
+    tip&&e('div',{className:'tip',style:{left:tip.x+8,top:tip.y-36,position:'fixed'}},
+      e('div',{style:{color:C.sub,fontSize:'0.68rem',marginBottom:'2px'}},`${tip.label}${tip.key&&tip.key!=='Value'?' · '+tip.key:''}`),
+      e('div',{style:{fontWeight:800,color:tip.col||color,fontSize:'0.85rem'}},fmt(tip.val))
+    )
+  );
+}
 
-const FSelect=({children,style={},...props})=>React.createElement('select',{...props,style:{width:'100%',background:C.bg,border:`1.5px solid ${C.border}`,borderRadius:'12px',padding:'0.6rem 0.85rem',color:C.text,fontSize:'0.88rem',outline:'none',boxSizing:'border-box',...style}},children);
+// ── SVG Donut Chart ──
+function DonutChart({data}){
+  if(!data||!data.length)return null;
+  const total=data.reduce((s,d)=>s+d.total,0);
+  const cx=90,cy=90,r=70,ri=45;
+  let angle=-Math.PI/2;
+  const slices=data.map(d=>{
+    const sa=angle,sweep=(d.total/total)*2*Math.PI;
+    angle+=sweep;
+    const ea=angle;
+    const x1=cx+r*Math.cos(sa),y1=cy+r*Math.sin(sa);
+    const x2=cx+r*Math.cos(ea),y2=cy+r*Math.sin(ea);
+    const ix1=cx+ri*Math.cos(sa),iy1=cy+ri*Math.sin(sa);
+    const ix2=cx+ri*Math.cos(ea),iy2=cy+ri*Math.sin(ea);
+    const large=sweep>Math.PI?1:0;
+    return{...d,path:`M${ix1},${iy1} L${x1},${y1} A${r},${r} 0 ${large} 1 ${x2},${y2} L${ix2},${iy2} A${ri},${ri} 0 ${large} 0 ${ix1},${iy1} Z`};
+  });
+  return e('svg',{viewBox:'0 0 180 180',style:{width:180,height:180}},
+    ...slices.map((s,i)=>e('path',{key:i,d:s.path,fill:s.color,stroke:'white',strokeWidth:2}))
+  );
+}
+
+// ── UI Components ──
+function PeriodPills({value,onChange,options}){
+  const opts=options||[['today','Today'],['week','Week'],['month','Month'],['year','Year'],['5year','5Y']];
+  return e('div',{style:{display:'flex',gap:'4px',flexWrap:'wrap'}},
+    ...opts.map(([p,l])=>e('button',{key:p,onClick:()=>onChange(p),style:{padding:'4px 10px',borderRadius:'999px',border:`1px solid ${value===p?C.accent:C.border}`,background:value===p?C.accent:'white',color:value===p?'white':C.sub,cursor:'pointer',fontSize:'0.68rem',fontWeight:700}},l))
+  );
+}
+function Chip({label,active,onClick,dot}){return e('button',{onClick,style:{display:'flex',alignItems:'center',gap:'5px',padding:'4px 12px',borderRadius:'999px',border:`1px solid ${active?C.accent:C.border}`,background:active?C.accentBg:'white',color:active?C.accent:C.sub,cursor:'pointer',fontSize:'0.72rem',fontWeight:active?700:400,whiteSpace:'nowrap'}},dot&&e('span',{style:{width:'7px',height:'7px',borderRadius:'50%',background:dot,display:'inline-block'}}),label);}
+function Card({children,style={}}){return e('div',{style:{background:C.card,borderRadius:'20px',padding:'1.25rem',boxShadow:'0 2px 12px rgba(0,0,0,0.05)',border:`1px solid ${C.border}`,...style}},children);}
+function SLabel({children}){return e('div',{style:{fontSize:'0.62rem',fontWeight:700,color:C.muted,letterSpacing:'0.09em',marginBottom:'5px'}},children);}
+function FInput({style={},...props}){return e('input',{...props,style:{width:'100%',background:C.bg,border:`1.5px solid ${C.border}`,borderRadius:'12px',padding:'0.6rem 0.85rem',color:C.text,fontSize:'0.9rem',outline:'none',boxSizing:'border-box',...style}});}
+function FSelect({children,style={},...props}){return e('select',{...props,style:{width:'100%',background:C.bg,border:`1.5px solid ${C.border}`,borderRadius:'12px',padding:'0.6rem 0.85rem',color:C.text,fontSize:'0.88rem',outline:'none',boxSizing:'border-box',...style}},children);}
+function MetricToggle({value,onChange}){return e('div',{style:{display:'flex',background:C.bg,borderRadius:'12px',padding:'3px'}},
+  ...[['income','Income',C.green],['spending','Spending',C.red],['net','Net',C.accent]].map(([m,l,col])=>e('button',{key:m,onClick:()=>onChange(m),style:{flex:1,padding:'0.4rem 0.25rem',borderRadius:'9px',border:'none',background:value===m?'white':'transparent',color:value===m?col:C.muted,cursor:'pointer',fontWeight:value===m?700:400,fontSize:'0.73rem',boxShadow:value===m?'0 1px 6px rgba(0,0,0,0.08)':'none'}},l))
+);}
+function ChartTypeToggle({value,onChange}){return e('div',{style:{display:'flex',background:C.bg,borderRadius:'9px',padding:'2px',gap:'1px'}},
+  ...[['bar','▊'],['line','∿']].map(([v,ic])=>e('button',{key:v,onClick:()=>onChange(v),style:{padding:'0.22rem 0.5rem',borderRadius:'7px',border:'none',background:value===v?'white':'transparent',color:value===v?C.accent:C.muted,cursor:'pointer',fontSize:'0.8rem',fontWeight:700,boxShadow:value===v?'0 1px 4px rgba(0,0,0,0.08)':'none'}},ic))
+);}
 
 // ── Main App ──
 function Jimikki(){
@@ -92,8 +191,6 @@ function Jimikki(){
   const [buckets,setBuckets]=useState(DEF_BUCKETS);
   const [loaded,setLoaded]=useState(false);
   const [toast,setToast]=useState('');
-
-  // FAB
   const [fabOpen,setFabOpen]=useState(false);
   const [fabMode,setFabMode]=useState(null);
   const [jAmt,setJAmt]=useState('');
@@ -102,15 +199,11 @@ function Jimikki(){
   const [jFrom,setJFrom]=useState('');
   const [jTo,setJTo]=useState('');
   const [jDate,setJDate]=useState(todayStr());
-
-  // Home
   const [hPeriod,setHPeriod]=useState('month');
   const [hMetric,setHMetric]=useState('income');
   const [hChartType,setHChartType]=useState('bar');
   const [hFilter,setHFilter]=useState(null);
   const [hStatPeriod,setHStatPeriod]=useState('month');
-
-  // Analytics
   const [aHFilter,setAHFilter]=useState(null);
   const [aBFilter,setABFilter]=useState(null);
   const [aPeriod,setAPeriod]=useState('month');
@@ -119,8 +212,6 @@ function Jimikki(){
   const [aMetric,setAMetric]=useState('spending');
   const [aChartType,setAChartType]=useState('bar');
   const [bktPeriod,setBktPeriod]=useState('month');
-
-  // Deep Research
   const [deepMode,setDeepMode]=useState(false);
   const [drMetric,setDrMetric]=useState('spending');
   const [drBucket,setDrBucket]=useState(null);
@@ -128,21 +219,19 @@ function Jimikki(){
   const [drMonths,setDrMonths]=useState(6);
   const [drCompareA,setDrCompareA]=useState('');
   const [drCompareB,setDrCompareB]=useState('');
-
-  // Sidebar forms
   const [nhName,setNhName]=useState('');
   const [nhBal,setNhBal]=useState('');
   const [nbName,setNbName]=useState('');
   const [nbColor,setNbColor]=useState(PALETTE[0]);
 
-  const actH=holders.filter(h=>!h.deleted);
-  const delH=holders.filter(h=>h.deleted);
+  const actH=holders.filter(x=>!x.deleted);
+  const delH=holders.filter(x=>x.deleted);
   const actT=txns.filter(t=>!t.deleted).sort((a,b)=>b.date.localeCompare(a.date));
   const delT=txns.filter(t=>t.deleted).sort((a,b)=>b.date.localeCompare(a.date));
-  const hName=id=>holders.find(h=>h.id===id)?.name||'?';
-  const bName=id=>buckets.find(b=>b.id===id)?.name||'—';
-  const bColor=id=>buckets.find(b=>b.id===id)?.color||C.accent;
-  const wealth=fH=>(fH?actH.filter(h=>h.id===fH):actH).reduce((s,h)=>s+h.balance,0);
+  const hName=id=>holders.find(x=>x.id===id)?.name||'?';
+  const bName=id=>buckets.find(x=>x.id===id)?.name||'—';
+  const bColor=id=>buckets.find(x=>x.id===id)?.color||C.accent;
+  const wealth=fH=>(fH?actH.filter(x=>x.id===fH):actH).reduce((s,x)=>s+x.balance,0);
 
   function statForPeriod(fH,period){
     const base=periodFilter(actT.filter(t=>t.type!=='swap'&&(!fH||t.holderId===fH)),period);
@@ -150,599 +239,382 @@ function Jimikki(){
   }
 
   useEffect(()=>{
-    try{const d=localStorage.getItem('jimikki-v4');if(d){const p=JSON.parse(d);setHolders(p.holders||[]);setTxns(p.txns||[]);setBuckets(p.buckets||DEF_BUCKETS);}}catch{}
+    try{const d=localStorage.getItem('jimikki-v4');if(d){const p=JSON.parse(d);setHolders(p.holders||[]);setTxns(p.txns||[]);setBuckets(p.buckets||DEF_BUCKETS);}}catch(err){}
     setLoaded(true);
   },[]);
-
-  useEffect(()=>{
-    if(!loaded)return;
-    try{localStorage.setItem('jimikki-v4',JSON.stringify({holders,txns,buckets}));}catch{}
-  },[holders,txns,buckets,loaded]);
+  useEffect(()=>{if(!loaded)return;try{localStorage.setItem('jimikki-v4',JSON.stringify({holders,txns,buckets}));}catch(err){}},[holders,txns,buckets,loaded]);
 
   const pop=msg=>{setToast(msg);setTimeout(()=>setToast(''),2500);};
 
-  function openFab(mode){
-    setFabMode(mode);setJAmt('');setJNote('');setJBucket('');setJDate(todayStr());
-    setJFrom(actH.find(h=>h.isPrimary)?.id||actH[0]?.id||'');setJTo('');
-  }
+  function openFab(mode){setFabMode(mode);setJAmt('');setJNote('');setJBucket('');setJDate(todayStr());setJFrom(actH.find(x=>x.isPrimary)?.id||actH[0]?.id||'');setJTo('');}
 
   function submitTxn(){
     const amt=parseFloat(jAmt);
     if(!amt||amt<=0)return pop('Enter a valid amount');
-    if(fabMode==='spending'&&!jBucket)return pop('Please select a spending bucket');
-    const from=holders.find(h=>h.id===jFrom);
+    if(fabMode==='spending'&&!jBucket)return pop('Select a spending bucket');
+    const from=holders.find(x=>x.id===jFrom);
     if(!from)return pop('Select a holder');
     if(fabMode==='income'){
       setTxns(ts=>[{id:uid(),type:'income',amount:amt,note:jNote,holderId:jFrom,date:jDate,deleted:false},...ts]);
-      setHolders(hs=>hs.map(h=>h.id===jFrom?{...h,balance:h.balance+amt}:h));
+      setHolders(hs=>hs.map(x=>x.id===jFrom?{...x,balance:x.balance+amt}:x));
     }else if(fabMode==='spending'){
       if(from.balance<amt)return pop('Insufficient balance');
       setTxns(ts=>[{id:uid(),type:'spending',amount:amt,note:jNote,bucketId:jBucket,holderId:jFrom,date:jDate,deleted:false},...ts]);
-      setHolders(hs=>hs.map(h=>h.id===jFrom?{...h,balance:h.balance-amt}:h));
+      setHolders(hs=>hs.map(x=>x.id===jFrom?{...x,balance:x.balance-amt}:x));
     }else{
       if(!jTo||jTo===jFrom)return pop('Select a different destination');
       if(from.balance<amt)return pop('Insufficient balance');
       setTxns(ts=>[{id:uid(),type:'swap',amount:amt,note:jNote||'Transfer',holderId:jFrom,toHolderId:jTo,date:jDate,deleted:false},...ts]);
-      setHolders(hs=>hs.map(h=>{if(h.id===jFrom)return{...h,balance:h.balance-amt};if(h.id===jTo)return{...h,balance:h.balance+amt};return h;}));
+      setHolders(hs=>hs.map(x=>{if(x.id===jFrom)return{...x,balance:x.balance-amt};if(x.id===jTo)return{...x,balance:x.balance+amt};return x;}));
     }
     setFabOpen(false);setFabMode(null);pop('Entry added ✓');
   }
 
   function delTxn(id){
-    if(!window.confirm('Delete this transaction? This will reverse its effect on your balance.'))return;
+    if(!window.confirm('Delete this transaction?'))return;
     const t=txns.find(x=>x.id===id);if(!t)return;
-    if(t.type==='income'){const h=holders.find(h=>h.id===t.holderId);if(h&&h.balance<t.amount)return pop('Cannot delete — balance would go below ₹0');}
-    if(t.type==='swap'){const th=holders.find(h=>h.id===t.toHolderId);if(th&&th.balance<t.amount)return pop('Cannot delete — would cause negative balance');}
-    setHolders(hs=>hs.map(h=>{
-      if(t.type==='income'&&h.id===t.holderId)return{...h,balance:h.balance-t.amount};
-      if(t.type==='spending'&&h.id===t.holderId)return{...h,balance:h.balance+t.amount};
-      if(t.type==='swap'){if(h.id===t.holderId)return{...h,balance:h.balance+t.amount};if(h.id===t.toHolderId)return{...h,balance:h.balance-t.amount};}
-      return h;
+    if(t.type==='income'){const x=holders.find(x=>x.id===t.holderId);if(x&&x.balance<t.amount)return pop('Cannot delete — balance would go below ₹0');}
+    if(t.type==='swap'){const x=holders.find(x=>x.id===t.toHolderId);if(x&&x.balance<t.amount)return pop('Cannot delete — would cause negative balance');}
+    setHolders(hs=>hs.map(x=>{
+      if(t.type==='income'&&x.id===t.holderId)return{...x,balance:x.balance-t.amount};
+      if(t.type==='spending'&&x.id===t.holderId)return{...x,balance:x.balance+t.amount};
+      if(t.type==='swap'){if(x.id===t.holderId)return{...x,balance:x.balance+t.amount};if(x.id===t.toHolderId)return{...x,balance:x.balance-t.amount};}
+      return x;
     }));
-    setTxns(ts=>ts.map(x=>x.id===id?{...x,deleted:true}:x));
-    pop('Moved to bin');
+    setTxns(ts=>ts.map(x=>x.id===id?{...x,deleted:true}:x));pop('Moved to bin');
   }
-
   function restTxn(id){
     if(!window.confirm('Restore this transaction?'))return;
     const t=txns.find(x=>x.id===id);if(!t)return;
-    setHolders(hs=>hs.map(h=>{
-      if(t.type==='income'&&h.id===t.holderId)return{...h,balance:h.balance+t.amount};
-      if(t.type==='spending'&&h.id===t.holderId)return{...h,balance:h.balance-t.amount};
-      if(t.type==='swap'){if(h.id===t.holderId)return{...h,balance:h.balance-t.amount};if(h.id===t.toHolderId)return{...h,balance:h.balance+t.amount};}
-      return h;
+    setHolders(hs=>hs.map(x=>{
+      if(t.type==='income'&&x.id===t.holderId)return{...x,balance:x.balance+t.amount};
+      if(t.type==='spending'&&x.id===t.holderId)return{...x,balance:x.balance-t.amount};
+      if(t.type==='swap'){if(x.id===t.holderId)return{...x,balance:x.balance-t.amount};if(x.id===t.toHolderId)return{...x,balance:x.balance+t.amount};}
+      return x;
     }));
-    setTxns(ts=>ts.map(x=>x.id===id?{...x,deleted:false}:x));
-    pop('Restored ✓');
+    setTxns(ts=>ts.map(x=>x.id===id?{...x,deleted:false}:x));pop('Restored ✓');
   }
-
-  function addHolder(){
-    if(!nhName.trim())return pop('Enter a name');
-    const bal=Math.max(0,parseFloat(nhBal)||0);
-    setHolders(hs=>[...hs,{id:uid(),name:nhName.trim(),balance:bal,isPrimary:hs.filter(h=>!h.deleted).length===0,deleted:false}]);
-    setNhName('');setNhBal('');pop('Holder added ✓');
-  }
-  function delHolder(id){
-    if(!window.confirm('Archive this holder?'))return;
-    if(holders.find(x=>x.id===id)?.isPrimary)return pop("Can't remove primary holder");
-    setHolders(hs=>hs.map(x=>x.id===id?{...x,deleted:true}:x));pop('Archived');
-  }
-  function restHolder(id){
-    if(!window.confirm('Restore this holder?'))return;
-    setHolders(hs=>hs.map(x=>x.id===id?{...x,deleted:false}:x));pop('Restored ✓');
-  }
+  function addHolder(){if(!nhName.trim())return pop('Enter a name');const bal=Math.max(0,parseFloat(nhBal)||0);setHolders(hs=>[...hs,{id:uid(),name:nhName.trim(),balance:bal,isPrimary:hs.filter(x=>!x.deleted).length===0,deleted:false}]);setNhName('');setNhBal('');pop('Holder added ✓');}
+  function delHolder(id){if(!window.confirm('Archive this holder?'))return;if(holders.find(x=>x.id===id)?.isPrimary)return pop("Can't remove primary holder");setHolders(hs=>hs.map(x=>x.id===id?{...x,deleted:true}:x));pop('Archived');}
+  function restHolder(id){if(!window.confirm('Restore?'))return;setHolders(hs=>hs.map(x=>x.id===id?{...x,deleted:false}:x));pop('Restored ✓');}
   function setPrimary(id){setHolders(hs=>hs.map(x=>({...x,isPrimary:x.id===id})));pop('Primary set');}
+  function addBucket(){if(!nbName.trim())return pop('Enter bucket name');setBuckets(bs=>[...bs,{id:uid(),name:nbName.trim(),color:nbColor}]);setNbName('');pop('Bucket created ✓');}
+  function delBucket(id){if(actT.some(t=>t.bucketId===id))return pop('Bucket in use — remove transactions first');setBuckets(bs=>bs.filter(b=>b.id!==id));pop('Bucket removed');}
 
-  function addBucket(){
-    if(!nbName.trim())return pop('Enter bucket name');
-    setBuckets(bs=>[...bs,{id:uid(),name:nbName.trim(),color:nbColor}]);
-    setNbName('');pop('Bucket created ✓');
+  function calcVal(arr,metric){
+    if(metric==='income')return arr.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+    if(metric==='spending')return arr.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0);
+    const i=arr.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0),sp=arr.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0);
+    return Math.max(0,i-sp);
   }
-  function delBucket(id){
-    if(actT.some(t=>t.bucketId===id))return pop('Bucket in use — remove its transactions first');
-    setBuckets(bs=>bs.filter(b=>b.id!==id));pop('Bucket removed');
-  }
-
-  const metricColor=m=>m==='income'?C.green:m==='spending'?C.red:C.accent;
-  const metricLabel=m=>m==='income'?'Income':m==='spending'?'Spending':'Net Savings';
-  const aMetricColor=aMetric==='income'?C.green:aMetric==='spending'?C.red:C.accent;
 
   function buildChartData(fH,period,metric){
-    const now=new Date();
-    const base=actT.filter(t=>t.type!=='swap'&&(!fH||t.holderId===fH));
-    const val=arr=>{
-      if(metric==='income')return arr.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
-      if(metric==='spending')return arr.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0);
-      const inc=arr.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
-      const spd=arr.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0);
-      return Math.max(0,inc-spd);
-    };
-    if(period==='today'||period==='week'){
-      const days=period==='today'?1:7;
-      return Array.from({length:days},(_,i)=>{const d=new Date(now);d.setDate(d.getDate()-(days-1-i));const key=d.toISOString().slice(0,10);return{name:days===1?'Today':d.toLocaleDateString('en',{weekday:'short'}),Value:val(base.filter(t=>t.date===key))};});
-    }
-    if(period==='month'){return Array.from({length:12},(_,i)=>{const d=new Date(now.getFullYear(),now.getMonth()-11+i,1);const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;return{name:d.toLocaleDateString('en',{month:'short'}),Value:val(base.filter(t=>t.date.slice(0,7)===key))};});}
-    if(period==='year'){const yr=now.getFullYear();return Array.from({length:12},(_,i)=>{const key=`${yr}-${String(i+1).padStart(2,'0')}`;return{name:new Date(yr,i,1).toLocaleDateString('en',{month:'short'}),Value:val(base.filter(t=>t.date.slice(0,7)===key))};});}
-    return Array.from({length:5},(_,i)=>{const yr=now.getFullYear()-4+i;return{name:String(yr),Value:val(base.filter(t=>t.date.startsWith(String(yr))))};});
-  }
-
-  function buildAChartData(){
-    const now=new Date();
-    const base=actT.filter(t=>t.type!=='swap'&&(!aHFilter||t.holderId===aHFilter)&&(!aBFilter||t.bucketId===aBFilter));
-    const val=arr=>{
-      if(aMetric==='income')return arr.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
-      if(aMetric==='spending')return arr.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0);
-      const inc=arr.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
-      const spd=arr.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0);
-      return Math.max(0,inc-spd);
-    };
-    if(aPeriod==='today'||aPeriod==='week'){const days=aPeriod==='today'?1:7;return Array.from({length:days},(_,i)=>{const d=new Date(now);d.setDate(d.getDate()-(days-1-i));const key=d.toISOString().slice(0,10);return{name:days===1?'Today':d.toLocaleDateString('en',{weekday:'short'}),Value:val(base.filter(t=>t.date===key))};});}
-    if(aPeriod==='month'){return Array.from({length:12},(_,i)=>{const d=new Date(now.getFullYear(),now.getMonth()-11+i,1);const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;return{name:d.toLocaleDateString('en',{month:'short'}),Value:val(base.filter(t=>t.date.slice(0,7)===key))};});}
-    if(aPeriod==='year'){const yr=now.getFullYear();return Array.from({length:12},(_,i)=>{const key=`${yr}-${String(i+1).padStart(2,'0')}`;return{name:new Date(yr,i,1).toLocaleDateString('en',{month:'short'}),Value:val(base.filter(t=>t.date.slice(0,7)===key))};});}
-    return Array.from({length:5},(_,i)=>{const yr=now.getFullYear()-4+i;return{name:String(yr),Value:val(base.filter(t=>t.date.startsWith(String(yr))))};});
+    const now=new Date(),base=actT.filter(t=>t.type!=='swap'&&(!fH||t.holderId===fH));
+    if(period==='today')return[{name:'Today',Value:calcVal(base.filter(t=>t.date===todayStr()),metric)}];
+    if(period==='week'){const days=7;return Array.from({length:days},(_,i)=>{const d=new Date(now);d.setDate(d.getDate()-(days-1-i));const k=d.toISOString().slice(0,10);return{name:d.toLocaleDateString('en',{weekday:'short'}),Value:calcVal(base.filter(t=>t.date===k),metric)};});}
+    if(period==='month')return Array.from({length:12},(_,i)=>{const d=new Date(now.getFullYear(),now.getMonth()-11+i,1),k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;return{name:d.toLocaleDateString('en',{month:'short'}),Value:calcVal(base.filter(t=>t.date.slice(0,7)===k),metric)};});
+    if(period==='year'){const yr=now.getFullYear();return Array.from({length:12},(_,i)=>{const k=`${yr}-${String(i+1).padStart(2,'0')}`;return{name:new Date(yr,i,1).toLocaleDateString('en',{month:'short'}),Value:calcVal(base.filter(t=>t.date.slice(0,7)===k),metric)};});}
+    return Array.from({length:5},(_,i)=>{const yr=now.getFullYear()-4+i;return{name:String(yr),Value:calcVal(base.filter(t=>t.date.startsWith(String(yr))),metric)};});
   }
 
   function bucketStats(period){
     const base=periodFilter(actT.filter(t=>t.type==='spending'&&(!aHFilter||t.holderId===aHFilter)),period);
-    return buckets.map(b=>({...b,total:base.filter(t=>t.bucketId===b.id).reduce((s,t)=>s+t.amount,0)})).filter(b=>b.total>0).sort((a,b2)=>b2.total-a.total);
+    return buckets.map(b=>({...b,total:base.filter(t=>t.bucketId===b.id).reduce((s,t)=>s+t.amount,0)})).filter(b=>b.total>0).sort((a,b)=>b.total-a.total);
   }
 
   function buildDRData(){
     const months=lastNMonths(drMonths);
     const base=actT.filter(t=>t.type!=='swap'&&(!drHolder||t.holderId===drHolder)&&(!drBucket||(t.type==='spending'&&t.bucketId===drBucket)));
-    const getVal=(arr,metric)=>{
-      if(metric==='income')return arr.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
-      if(metric==='spending')return arr.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0);
-      const inc=arr.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
-      const spd=arr.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0);
-      return Math.max(0,inc-spd);
-    };
-    return months.map(m=>({name:m.label,key:m.key,Income:getVal(base.filter(t=>t.date.slice(0,7)===m.key),'income'),Spending:getVal(base.filter(t=>t.date.slice(0,7)===m.key),'spending'),Net:getVal(base.filter(t=>t.date.slice(0,7)===m.key),'net'),Value:getVal(base.filter(t=>t.date.slice(0,7)===m.key),drMetric)}));
+    return months.map(m=>{const sub=base.filter(t=>t.date.slice(0,7)===m.key);return{name:m.label,key:m.key,Income:calcVal(sub,'income'),Spending:calcVal(sub,'spending'),Net:calcVal(sub,'net'),Value:calcVal(sub,drMetric)};});
   }
 
-  function getDRCompareStats(monthKey,metric){
-    const base=actT.filter(t=>t.type!=='swap'&&(!drHolder||t.holderId===drHolder)&&(!drBucket||(t.type==='spending'&&t.bucketId===drBucket))&&t.date.slice(0,7)===monthKey);
-    if(metric==='income')return base.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
-    if(metric==='spending')return base.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0);
-    const inc=base.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
-    const spd=base.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0);
-    return Math.max(0,inc-spd);
+  function getDRStats(mk,metric){
+    const base=actT.filter(t=>t.type!=='swap'&&(!drHolder||t.holderId===drHolder)&&(!drBucket||(t.type==='spending'&&t.bucketId===drBucket))&&t.date.slice(0,7)===mk);
+    return calcVal(base,metric);
   }
 
-  function getDRBucketBreakdown(monthKey){
-    return buckets.map(b=>({...b,total:actT.filter(t=>t.type==='spending'&&t.bucketId===b.id&&t.date.slice(0,7)===monthKey&&(!drHolder||t.holderId===drHolder)).reduce((s,t)=>s+t.amount,0)})).filter(b=>b.total>0).sort((a,c)=>c.total-a.total);
-  }
+  function getDRBuckets(mk){return buckets.map(b=>({...b,total:actT.filter(t=>t.type==='spending'&&t.bucketId===b.id&&t.date.slice(0,7)===mk&&(!drHolder||t.holderId===drHolder)).reduce((s,t)=>s+t.amount,0)})).filter(b=>b.total>0).sort((a,c)=>c.total-a.total);}
 
   const drData=buildDRData();
   const availMonths=lastNMonths(24);
-  const filteredATxns=(()=>{let base=actT.filter(t=>(!aHFilter||t.holderId===aHFilter||(t.type==='swap'&&t.toHolderId===aHFilter)));if(aBFilter)base=base.filter(t=>t.bucketId===aBFilter);return periodFilter(base,aTxnPeriod);})();
   const hStats=statForPeriod(hFilter,hStatPeriod);
   const hChartData=buildChartData(hFilter,hPeriod,hMetric);
-  const aChartData=buildAChartData();
+  const aChartData=buildChartData(aHFilter,aPeriod,aMetric);
   const bStats=bucketStats(bktPeriod);
   const bTotal=bStats.reduce((s,b)=>s+b.total,0);
-  const axisStyle={fontSize:9,fill:C.sub};
-  const ttStyle={background:'white',border:`1px solid ${C.border}`,borderRadius:'12px',boxShadow:'0 4px 20px rgba(0,0,0,0.08)'};
+  const filteredATxns=(()=>{let base=actT.filter(t=>(!aHFilter||t.holderId===aHFilter||(t.type==='swap'&&t.toHolderId===aHFilter)));if(aBFilter)base=base.filter(t=>t.bucketId===aBFilter);return periodFilter(base,aTxnPeriod);})();
 
-  const SingleTooltip=({active,payload,label})=>{
-    if(!active||!payload?.length)return null;
-    return React.createElement('div',{style:{background:'white',border:`1px solid ${C.border}`,borderRadius:'12px',padding:'0.65rem 0.9rem',boxShadow:'0 4px 20px rgba(0,0,0,0.1)',fontSize:'0.78rem'}},
-      React.createElement('div',{style:{color:C.sub,marginBottom:'4px',fontWeight:600}},label),
-      React.createElement('div',{style:{fontWeight:800,color:metricColor(hMetric),fontSize:'0.92rem'}},fmt(payload[0]?.value||0))
-    );
-  };
-  const ASingleTooltip=({active,payload,label})=>{
-    if(!active||!payload?.length)return null;
-    return React.createElement('div',{style:{background:'white',border:`1px solid ${C.border}`,borderRadius:'12px',padding:'0.65rem 0.9rem',boxShadow:'0 4px 20px rgba(0,0,0,0.1)',fontSize:'0.78rem'}},
-      React.createElement('div',{style:{color:C.sub,marginBottom:'4px',fontWeight:600}},label),
-      React.createElement('div',{style:{fontWeight:800,color:aMetricColor,fontSize:'0.92rem'}},fmt(payload[0]?.value||0))
-    );
-  };
-  const DRTooltip=({active,payload,label})=>{
-    if(!active||!payload?.length)return null;
-    return React.createElement('div',{style:{background:'white',border:`1px solid ${C.border}`,borderRadius:'12px',padding:'0.65rem 0.9rem',boxShadow:'0 4px 20px rgba(0,0,0,0.1)',fontSize:'0.78rem'}},
-      React.createElement('div',{style:{color:C.sub,marginBottom:'6px',fontWeight:700}},label),
-      ...payload.map(p=>React.createElement('div',{key:p.dataKey,style:{display:'flex',justifyContent:'space-between',gap:'1.5rem',fontWeight:600,color:p.color,marginBottom:'2px'}},
-        React.createElement('span',null,p.dataKey),React.createElement('span',null,fmt(p.value))
-      ))
-    );
-  };
-
-  const TxnRow=({t,onDel,onRest})=>{
+  function TxnRow({t,onDel,onRest}){
     const col=t.type==='income'?C.green:t.type==='swap'?C.blue:C.red;
     const bg=t.type==='income'?C.greenBg:t.type==='swap'?'#EFF6FF':C.redBg;
-    return React.createElement('div',{style:{display:'grid',gridTemplateColumns:'40px 1fr auto 32px',gap:'0.5rem',alignItems:'center',padding:'0.7rem 0',borderBottom:`1px solid ${C.border}`}},
-      React.createElement('div',{style:{width:'40px',height:'40px',borderRadius:'12px',background:bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.05rem',flexShrink:0}},t.type==='income'?'↙️':t.type==='swap'?'↔️':'↗️'),
-      React.createElement('div',{style:{minWidth:0}},
-        React.createElement('div',{style:{fontSize:'0.85rem',fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},t.note||bName(t.bucketId)||'Transfer'),
-        React.createElement('div',{style:{fontSize:'0.68rem',color:C.sub,marginTop:'2px',display:'flex',gap:'5px',flexWrap:'wrap'}},
-          React.createElement('span',null,t.date),
-          t.bucketId&&React.createElement('span',{style:{color:bColor(t.bucketId),fontWeight:600}},`· ${bName(t.bucketId)}`),
-          t.toHolderId&&React.createElement('span',{style:{color:C.blue}},`· ${hName(t.holderId)} → ${hName(t.toHolderId)}`),
-          !t.toHolderId&&React.createElement('span',null,`· ${hName(t.holderId)}`)
+    return e('div',{style:{display:'grid',gridTemplateColumns:'40px 1fr auto 32px',gap:'0.5rem',alignItems:'center',padding:'0.7rem 0',borderBottom:`1px solid ${C.border}`}},
+      e('div',{style:{width:'40px',height:'40px',borderRadius:'12px',background:bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.05rem',flexShrink:0}},t.type==='income'?'↙️':t.type==='swap'?'↔️':'↗️'),
+      e('div',{style:{minWidth:0}},
+        e('div',{style:{fontSize:'0.85rem',fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},t.note||bName(t.bucketId)||'Transfer'),
+        e('div',{style:{fontSize:'0.68rem',color:C.sub,marginTop:'2px',display:'flex',gap:'5px',flexWrap:'wrap'}},
+          e('span',null,t.date),
+          t.bucketId&&e('span',{style:{color:bColor(t.bucketId),fontWeight:600}},`· ${bName(t.bucketId)}`),
+          t.toHolderId&&e('span',{style:{color:C.blue}},`· ${hName(t.holderId)} → ${hName(t.toHolderId)}`),
+          !t.toHolderId&&e('span',null,`· ${hName(t.holderId)}`)
         )
       ),
-      React.createElement('span',{style:{fontSize:'0.88rem',fontWeight:700,color:col,whiteSpace:'nowrap'}},(t.type==='income'?'+':t.type==='spending'?'-':'')+fmt(t.amount)),
-      onDel&&React.createElement('button',{onClick:onDel,style:{background:'none',border:'none',cursor:'pointer',color:C.muted,fontSize:'1.1rem',padding:0,lineHeight:1,display:'flex',alignItems:'center',justifyContent:'center'}},'×'),
-      onRest&&React.createElement('button',{onClick:onRest,style:{background:C.greenBg,color:C.green,border:'none',borderRadius:'7px',padding:'3px 7px',cursor:'pointer',fontSize:'0.65rem',fontWeight:700}},'↩')
+      e('span',{style:{fontSize:'0.88rem',fontWeight:700,color:col,whiteSpace:'nowrap'}},(t.type==='income'?'+':t.type==='spending'?'-':'')+fmt(t.amount)),
+      onDel&&e('button',{onClick:onDel,style:{background:'none',border:'none',cursor:'pointer',color:C.muted,fontSize:'1.1rem',padding:0,lineHeight:1}},'×'),
+      onRest&&e('button',{onClick:onRest,style:{background:C.greenBg,color:C.green,border:'none',borderRadius:'7px',padding:'3px 7px',cursor:'pointer',fontSize:'0.65rem',fontWeight:700}},'↩')
     );
-  };
+  }
 
-  if(!loaded)return React.createElement('div',{style:{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:C.bg}},
-    React.createElement('div',{style:{fontFamily:'cursive',fontSize:'2.5rem',color:C.accent}},'Jimikki'),
-    React.createElement('div',{style:{fontSize:'0.8rem',color:C.sub,marginTop:'0.5rem'}},'Loading your wealth diary…')
-  );
+  if(!loaded)return e('div',{style:{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:C.bg}},e('div',{style:{fontFamily:'cursive',fontSize:'2.5rem',color:C.accent}},'Jimikki'),e('div',{style:{fontSize:'0.8rem',color:C.sub,marginTop:'0.5rem'}},'Loading…'));
 
-  return React.createElement('div',{style:{minHeight:'100vh',background:C.bg,maxWidth:'480px',margin:'0 auto',fontFamily:'"Inter",system-ui,sans-serif',color:C.text}},
+  return e('div',{style:{minHeight:'100vh',background:C.bg,maxWidth:'480px',margin:'0 auto',fontFamily:'"Inter",system-ui,sans-serif',color:C.text}},
+    toast&&e('div',{style:{position:'fixed',top:'1rem',left:'50%',transform:'translateX(-50%)',zIndex:2000,background:C.text,color:'white',padding:'0.5rem 1.25rem',borderRadius:'999px',fontSize:'0.78rem',whiteSpace:'nowrap',boxShadow:'0 4px 20px rgba(0,0,0,0.2)'}},toast),
 
-    // Toast
-    toast&&React.createElement('div',{style:{position:'fixed',top:'1rem',left:'50%',transform:'translateX(-50%)',zIndex:2000,background:C.text,color:'white',padding:'0.5rem 1.25rem',borderRadius:'999px',fontSize:'0.78rem',whiteSpace:'nowrap',boxShadow:'0 4px 20px rgba(0,0,0,0.2)'}},toast),
-
-    // FAB Sheet
-    fabOpen&&React.createElement('div',{style:{position:'fixed',inset:0,zIndex:300,display:'flex',flexDirection:'column',justifyContent:'flex-end'}},
-      React.createElement('div',{style:{position:'absolute',inset:0,background:'rgba(15,18,40,0.5)',backdropFilter:'blur(6px)'},onClick:()=>{setFabOpen(false);setFabMode(null);}}),
-      React.createElement('div',{style:{position:'relative',background:'white',borderRadius:'28px 28px 0 0',padding:'1.25rem 1.25rem 7rem',maxWidth:'480px',width:'100%',margin:'0 auto',boxShadow:'0 -8px 40px rgba(0,0,0,0.12)'}},
-        React.createElement('div',{style:{width:'36px',height:'4px',borderRadius:'2px',background:C.border,margin:'0 auto 1.25rem'}}),
-        !fabMode?React.createElement('div',null,
-          React.createElement('div',{style:{marginBottom:'1.25rem'}},
-            React.createElement('div',{style:{fontWeight:800,fontSize:'1.1rem',color:C.text}},'New Entry'),
-            React.createElement('div',{style:{fontSize:'0.73rem',color:C.sub,marginTop:'2px'}},'Choose what you want to record')
-          ),
-          React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'0.65rem'}},
-            ...[{m:'income',emoji:'⬇️',label:'Income',sub:'Money in',col:C.green,bg:C.greenBg},{m:'spending',emoji:'⬆️',label:'Spending',sub:'Money out',col:C.red,bg:C.redBg},{m:'swap',emoji:'↔️',label:'Swap',sub:'Move funds',col:C.blue,bg:'#EFF6FF'}].map(({m,emoji,label,sub,col,bg})=>
-              React.createElement('button',{key:m,onClick:()=>openFab(m),style:{display:'flex',flexDirection:'column',alignItems:'center',padding:'1.25rem 0.5rem',borderRadius:'18px',border:`1.5px solid ${col}30`,background:bg,cursor:'pointer',gap:'0.35rem'}},
-                React.createElement('span',{style:{fontSize:'1.75rem'}},emoji),
-                React.createElement('span',{style:{fontWeight:700,fontSize:'0.83rem',color:col}},label),
-                React.createElement('span',{style:{fontSize:'0.62rem',color:C.sub}},sub)
+    // FAB
+    fabOpen&&e('div',{style:{position:'fixed',inset:0,zIndex:300,display:'flex',flexDirection:'column',justifyContent:'flex-end'}},
+      e('div',{style:{position:'absolute',inset:0,background:'rgba(15,18,40,0.5)',backdropFilter:'blur(6px)'},onClick:()=>{setFabOpen(false);setFabMode(null);}}),
+      e('div',{style:{position:'relative',background:'white',borderRadius:'28px 28px 0 0',padding:'1.25rem 1.25rem 7rem',maxWidth:'480px',width:'100%',margin:'0 auto',boxShadow:'0 -8px 40px rgba(0,0,0,0.12)'}},
+        e('div',{style:{width:'36px',height:'4px',borderRadius:'2px',background:C.border,margin:'0 auto 1.25rem'}}),
+        !fabMode
+          ?e('div',null,
+            e('div',{style:{fontWeight:800,fontSize:'1.1rem',color:C.text,marginBottom:'0.35rem'}},'New Entry'),
+            e('div',{style:{fontSize:'0.73rem',color:C.sub,marginBottom:'1.25rem'}},'Choose what you want to record'),
+            e('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'0.65rem'}},
+              ...[{m:'income',emoji:'⬇️',label:'Income',sub:'Money in',col:C.green,bg:C.greenBg},{m:'spending',emoji:'⬆️',label:'Spending',sub:'Money out',col:C.red,bg:C.redBg},{m:'swap',emoji:'↔️',label:'Swap',sub:'Move funds',col:C.blue,bg:'#EFF6FF'}].map(({m,emoji,label,sub,col,bg})=>
+                e('button',{key:m,onClick:()=>openFab(m),style:{display:'flex',flexDirection:'column',alignItems:'center',padding:'1.25rem 0.5rem',borderRadius:'18px',border:`1.5px solid ${col}30`,background:bg,cursor:'pointer',gap:'0.35rem'}},
+                  e('span',{style:{fontSize:'1.75rem'}},emoji),e('span',{style:{fontWeight:700,fontSize:'0.83rem',color:col}},label),e('span',{style:{fontSize:'0.62rem',color:C.sub}},sub)
+                )
               )
             )
           )
-        ):React.createElement('div',null,
-          React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'0.65rem',marginBottom:'1.1rem'}},
-            React.createElement('button',{onClick:()=>setFabMode(null),style:{background:C.bg,border:`1px solid ${C.border}`,borderRadius:'10px',padding:'0.35rem 0.7rem',cursor:'pointer',fontSize:'0.8rem',color:C.sub}},'← Back'),
-            React.createElement('span',{style:{fontWeight:700,fontSize:'0.95rem',color:fabMode==='income'?C.green:fabMode==='spending'?C.red:C.blue}},fabMode==='income'?'⬇️ Add Income':fabMode==='spending'?'⬆️ Add Spending':'↔️ Transfer')
-          ),
-          actH.length===0&&React.createElement('div',{style:{background:C.redBg,border:`1px solid ${C.red}30`,borderRadius:'12px',padding:'0.7rem',fontSize:'0.78rem',color:C.red,marginBottom:'0.85rem'}},'⚠️ No holders found. Add one from the ☰ menu first.'),
-          React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'0.8rem'}},
-            React.createElement('div',null,React.createElement(SLabel,null,'AMOUNT'),React.createElement(FInput,{value:jAmt,onChange:e=>setJAmt(e.target.value),type:'number',min:'0',placeholder:'0.00',autoFocus:true,style:{fontSize:'1.35rem',fontWeight:800}})),
-            React.createElement('div',null,React.createElement(SLabel,null,'NOTE ',React.createElement('span',{style:{color:C.muted,fontWeight:400,fontSize:'0.65rem'}},'(optional)')),React.createElement(FInput,{value:jNote,onChange:e=>setJNote(e.target.value),placeholder:fabMode==='spending'?'e.g. Starbucks, grocery…':'e.g. Salary, bonus…'})),
-            fabMode==='spending'&&React.createElement('div',null,
-              React.createElement(SLabel,null,'BUCKET ',React.createElement('span',{style:{color:C.red,fontWeight:700}},'* required')),
-              React.createElement(FSelect,{value:jBucket,onChange:e=>setJBucket(e.target.value)},
-                React.createElement('option',{value:''},'— Choose a bucket —'),
-                ...buckets.map(b=>React.createElement('option',{key:b.id,value:b.id},b.name))
-              )
+          :e('div',null,
+            e('div',{style:{display:'flex',alignItems:'center',gap:'0.65rem',marginBottom:'1.1rem'}},
+              e('button',{onClick:()=>setFabMode(null),style:{background:C.bg,border:`1px solid ${C.border}`,borderRadius:'10px',padding:'0.35rem 0.7rem',cursor:'pointer',fontSize:'0.8rem',color:C.sub}},'← Back'),
+              e('span',{style:{fontWeight:700,fontSize:'0.95rem',color:fabMode==='income'?C.green:fabMode==='spending'?C.red:C.blue}},fabMode==='income'?'⬇️ Add Income':fabMode==='spending'?'⬆️ Add Spending':'↔️ Transfer')
             ),
-            React.createElement('div',{style:{display:'grid',gridTemplateColumns:fabMode==='swap'?'1fr 1fr':'1fr',gap:'0.6rem'}},
-              React.createElement('div',null,
-                React.createElement(SLabel,null,fabMode==='swap'?'FROM':'HOLDER'),
-                React.createElement(FSelect,{value:jFrom,onChange:e=>setJFrom(e.target.value)},
-                  React.createElement('option',{value:''},'Select holder'),
-                  ...actH.map(h=>React.createElement('option',{key:h.id,value:h.id},`${h.name} (${fmt(h.balance)})`))
-                )
+            actH.length===0&&e('div',{style:{background:C.redBg,border:`1px solid ${C.red}30`,borderRadius:'12px',padding:'0.7rem',fontSize:'0.78rem',color:C.red,marginBottom:'0.85rem'}},'⚠️ No holders found. Add one from the ☰ menu first.'),
+            e('div',{style:{display:'flex',flexDirection:'column',gap:'0.8rem'}},
+              e('div',null,e(SLabel,null,'AMOUNT'),e(FInput,{value:jAmt,onChange:ev=>setJAmt(ev.target.value),type:'number',min:'0',placeholder:'0.00',autoFocus:true,style:{fontSize:'1.35rem',fontWeight:800}})),
+              e('div',null,e(SLabel,null,'NOTE (optional)'),e(FInput,{value:jNote,onChange:ev=>setJNote(ev.target.value),placeholder:fabMode==='spending'?'e.g. Starbucks…':'e.g. Salary…'})),
+              fabMode==='spending'&&e('div',null,e(SLabel,null,e('span',null,'BUCKET '),e('span',{style:{color:C.red,fontWeight:700}},'* required')),e(FSelect,{value:jBucket,onChange:ev=>setJBucket(ev.target.value)},e('option',{value:''},'— Choose a bucket —'),...buckets.map(b=>e('option',{key:b.id,value:b.id},b.name)))),
+              e('div',{style:{display:'grid',gridTemplateColumns:fabMode==='swap'?'1fr 1fr':'1fr',gap:'0.6rem'}},
+                e('div',null,e(SLabel,null,fabMode==='swap'?'FROM':'HOLDER'),e(FSelect,{value:jFrom,onChange:ev=>setJFrom(ev.target.value)},e('option',{value:''},'Select holder'),...actH.map(x=>e('option',{key:x.id,value:x.id},`${x.name} (${fmt(x.balance)})`)))),
+                fabMode==='swap'&&e('div',null,e(SLabel,null,'TO'),e(FSelect,{value:jTo,onChange:ev=>setJTo(ev.target.value)},e('option',{value:''},'Select holder'),...actH.filter(x=>x.id!==jFrom).map(x=>e('option',{key:x.id,value:x.id},x.name))))
               ),
-              fabMode==='swap'&&React.createElement('div',null,
-                React.createElement(SLabel,null,'TO'),
-                React.createElement(FSelect,{value:jTo,onChange:e=>setJTo(e.target.value)},
-                  React.createElement('option',{value:''},'Select holder'),
-                  ...actH.filter(h=>h.id!==jFrom).map(h=>React.createElement('option',{key:h.id,value:h.id},h.name))
-                )
-              )
-            ),
-            React.createElement('div',null,React.createElement(SLabel,null,'DATE'),React.createElement(FInput,{type:'date',value:jDate,onChange:e=>setJDate(e.target.value)})),
-            React.createElement('button',{onClick:submitTxn,style:{padding:'0.8rem',borderRadius:'14px',border:'none',background:fabMode==='income'?C.green:fabMode==='spending'?C.red:C.blue,color:'white',fontWeight:800,fontSize:'0.95rem',cursor:'pointer'}},`Record ${fabMode.charAt(0).toUpperCase()+fabMode.slice(1)}`)
+              e('div',null,e(SLabel,null,'DATE'),e(FInput,{type:'date',value:jDate,onChange:ev=>setJDate(ev.target.value)})),
+              e('button',{onClick:submitTxn,style:{padding:'0.8rem',borderRadius:'14px',border:'none',background:fabMode==='income'?C.green:fabMode==='spending'?C.red:C.blue,color:'white',fontWeight:800,fontSize:'0.95rem',cursor:'pointer'}},`Record ${fabMode.charAt(0).toUpperCase()+fabMode.slice(1)}`)
+            )
           )
-        )
       )
     ),
 
     // Sidebar
-    sidebar&&React.createElement('div',{style:{position:'fixed',inset:0,zIndex:200,display:'flex'}},
-      React.createElement('div',{style:{position:'absolute',inset:0,background:'rgba(0,0,0,0.3)',backdropFilter:'blur(4px)'},onClick:()=>setSidebar(false)}),
-      React.createElement('div',{style:{position:'relative',marginLeft:'auto',width:'300px',background:'white',height:'100%',overflowY:'auto',padding:'1.5rem 1.1rem',display:'flex',flexDirection:'column',gap:'0.4rem',boxShadow:'-4px 0 40px rgba(0,0,0,0.12)'}},
-        React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.75rem'}},
-          React.createElement('span',{style:{fontFamily:'cursive',fontSize:'1.5rem',color:C.accent}},'Jimikki'),
-          React.createElement('button',{onClick:()=>setSidebar(false),style:{background:C.bg,border:`1px solid ${C.border}`,borderRadius:'8px',padding:'0.3rem 0.6rem',cursor:'pointer',color:C.sub}},'✕')
+    sidebar&&e('div',{style:{position:'fixed',inset:0,zIndex:200,display:'flex'}},
+      e('div',{style:{position:'absolute',inset:0,background:'rgba(0,0,0,0.3)',backdropFilter:'blur(4px)'},onClick:()=>setSidebar(false)}),
+      e('div',{style:{position:'relative',marginLeft:'auto',width:'300px',background:'white',height:'100%',overflowY:'auto',padding:'1.5rem 1.1rem',display:'flex',flexDirection:'column',gap:'0.4rem',boxShadow:'-4px 0 40px rgba(0,0,0,0.12)'}},
+        e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.75rem'}},
+          e('span',{style:{fontFamily:'cursive',fontSize:'1.5rem',color:C.accent}},'Jimikki'),
+          e('button',{onClick:()=>setSidebar(false),style:{background:C.bg,border:`1px solid ${C.border}`,borderRadius:'8px',padding:'0.3rem 0.6rem',cursor:'pointer',color:C.sub}},'✕')
         ),
-        ...[['home','🏠','Home'],['analytics','📊','Analytics']].map(([v,ic,l])=>
-          React.createElement('button',{key:v,onClick:()=>{setView(v);setSidebar(false);},style:{textAlign:'left',padding:'0.6rem 0.85rem',border:`1px solid ${view===v?C.accent+'60':C.border}`,borderRadius:'12px',background:view===v?C.accentBg:'transparent',fontWeight:view===v?700:400,cursor:'pointer',fontSize:'0.88rem',color:view===v?C.accent:C.sub}},`${ic} ${l}`)
-        ),
-        React.createElement('div',{style:{height:'1px',background:C.border,margin:'0.5rem 0'}}),
-        React.createElement('div',{style:{fontSize:'0.6rem',fontWeight:700,color:C.muted,letterSpacing:'0.1em'}},'MONEY HOLDERS'),
-        actH.length===0&&React.createElement('div',{style:{fontSize:'0.78rem',color:C.muted,textAlign:'center',padding:'0.65rem'}},'No holders yet'),
-        ...actH.map(h=>React.createElement('div',{key:h.id,style:{display:'flex',alignItems:'center',gap:'0.45rem',padding:'0.5rem 0.7rem',background:C.bg,borderRadius:'12px',border:`1px solid ${C.border}`}},
-          React.createElement('div',{style:{width:'8px',height:'8px',borderRadius:'50%',background:h.isPrimary?C.accent:C.muted,flexShrink:0}}),
-          React.createElement('div',{style:{flex:1,minWidth:0}},
-            React.createElement('div',{style:{fontSize:'0.82rem',fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},h.name),
-            React.createElement('div',{style:{fontSize:'0.68rem',color:C.sub}},fmt(h.balance))
-          ),
-          !h.isPrimary&&React.createElement('button',{onClick:()=>setPrimary(h.id),style:{background:'none',border:`1px solid ${C.border}`,borderRadius:'6px',padding:'2px 6px',cursor:'pointer',color:C.muted,fontSize:'0.62rem'}},'★'),
-          !h.isPrimary&&React.createElement('button',{onClick:()=>delHolder(h.id),style:{background:'none',border:'none',cursor:'pointer',color:C.red,fontSize:'1rem',opacity:.6}},'×')
+        ...[['home','🏠 Home'],['analytics','📊 Analytics']].map(([v,l])=>e('button',{key:v,onClick:()=>{setView(v);setSidebar(false);},style:{textAlign:'left',padding:'0.6rem 0.85rem',border:`1px solid ${view===v?C.accent+'60':C.border}`,borderRadius:'12px',background:view===v?C.accentBg:'transparent',fontWeight:view===v?700:400,cursor:'pointer',fontSize:'0.88rem',color:view===v?C.accent:C.sub}},l)),
+        e('div',{style:{height:'1px',background:C.border,margin:'0.5rem 0'}}),
+        e('div',{style:{fontSize:'0.6rem',fontWeight:700,color:C.muted,letterSpacing:'0.1em'}},'MONEY HOLDERS'),
+        actH.length===0&&e('div',{style:{fontSize:'0.78rem',color:C.muted,textAlign:'center',padding:'0.65rem'}},'No holders yet'),
+        ...actH.map(x=>e('div',{key:x.id,style:{display:'flex',alignItems:'center',gap:'0.45rem',padding:'0.5rem 0.7rem',background:C.bg,borderRadius:'12px',border:`1px solid ${C.border}`}},
+          e('div',{style:{width:'8px',height:'8px',borderRadius:'50%',background:x.isPrimary?C.accent:C.muted,flexShrink:0}}),
+          e('div',{style:{flex:1,minWidth:0}},e('div',{style:{fontSize:'0.82rem',fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},x.name),e('div',{style:{fontSize:'0.68rem',color:C.sub}},fmt(x.balance))),
+          !x.isPrimary&&e('button',{onClick:()=>setPrimary(x.id),style:{background:'none',border:`1px solid ${C.border}`,borderRadius:'6px',padding:'2px 6px',cursor:'pointer',color:C.muted,fontSize:'0.62rem'}},'★'),
+          !x.isPrimary&&e('button',{onClick:()=>delHolder(x.id),style:{background:'none',border:'none',cursor:'pointer',color:C.red,fontSize:'1rem',opacity:.6}},'×')
         )),
-        React.createElement('div',{style:{display:'flex',gap:'0.35rem'}},
-          React.createElement(FInput,{value:nhName,onChange:e=>setNhName(e.target.value),onKeyDown:e=>e.key==='Enter'&&addHolder(),placeholder:'Name',style:{flex:2,minWidth:0}}),
-          React.createElement(FInput,{value:nhBal,onChange:e=>setNhBal(e.target.value),onKeyDown:e=>e.key==='Enter'&&addHolder(),placeholder:'₹',type:'number',min:'0',style:{flex:1,minWidth:0}}),
-          React.createElement('button',{onClick:addHolder,style:{background:C.accent,color:'white',border:'none',borderRadius:'12px',padding:'0.5rem 0.75rem',cursor:'pointer',fontWeight:700,fontSize:'1rem',flexShrink:0}},'+')
+        e('div',{style:{display:'flex',gap:'0.35rem'}},
+          e(FInput,{value:nhName,onChange:ev=>setNhName(ev.target.value),onKeyDown:ev=>ev.key==='Enter'&&addHolder(),placeholder:'Name',style:{flex:2,minWidth:0}}),
+          e(FInput,{value:nhBal,onChange:ev=>setNhBal(ev.target.value),onKeyDown:ev=>ev.key==='Enter'&&addHolder(),placeholder:'₹',type:'number',min:'0',style:{flex:1,minWidth:0}}),
+          e('button',{onClick:addHolder,style:{background:C.accent,color:'white',border:'none',borderRadius:'12px',padding:'0.5rem 0.75rem',cursor:'pointer',fontWeight:700,fontSize:'1rem',flexShrink:0}},'+')
         ),
-        delH.length>0&&React.createElement('div',null,
-          React.createElement('div',{style:{fontSize:'0.6rem',fontWeight:700,color:C.muted,letterSpacing:'0.1em',marginTop:'0.25rem'}},'ARCHIVED HOLDERS'),
-          ...delH.map(h=>React.createElement('div',{key:h.id,style:{display:'flex',alignItems:'center',gap:'0.4rem',padding:'0.45rem 0.7rem',background:'#FFFBEB',borderRadius:'10px',border:'1px solid #FDE68A'}},
-            React.createElement('div',{style:{flex:1,fontSize:'0.78rem',color:'#92400E',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},`${h.name} (${fmt(h.balance)})`),
-            React.createElement('button',{onClick:()=>restHolder(h.id),style:{fontSize:'0.68rem',background:'#FEF3C7',color:'#92400E',border:'1px solid #FDE68A',borderRadius:'6px',padding:'2px 8px',cursor:'pointer'}},'↩')
-          ))
+        delH.length>0&&e('div',null,
+          e('div',{style:{fontSize:'0.6rem',fontWeight:700,color:C.muted,letterSpacing:'0.1em',marginTop:'0.25rem'}},'ARCHIVED'),
+          ...delH.map(x=>e('div',{key:x.id,style:{display:'flex',alignItems:'center',gap:'0.4rem',padding:'0.45rem 0.7rem',background:'#FFFBEB',borderRadius:'10px',border:'1px solid #FDE68A'}},e('div',{style:{flex:1,fontSize:'0.78rem',color:'#92400E',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},`${x.name} (${fmt(x.balance)})`),e('button',{onClick:()=>restHolder(x.id),style:{fontSize:'0.68rem',background:'#FEF3C7',color:'#92400E',border:'1px solid #FDE68A',borderRadius:'6px',padding:'2px 8px',cursor:'pointer'}},'↩')))
         ),
-        React.createElement('div',{style:{height:'1px',background:C.border,margin:'0.5rem 0'}}),
-        React.createElement('div',{style:{fontSize:'0.6rem',fontWeight:700,color:C.muted,letterSpacing:'0.1em'}},'SPENDING BUCKETS'),
-        ...buckets.map(b=>React.createElement('div',{key:b.id,style:{display:'flex',alignItems:'center',gap:'0.5rem',padding:'0.5rem 0.7rem',background:C.bg,borderRadius:'12px',border:`1px solid ${C.border}`}},
-          React.createElement('div',{style:{width:'10px',height:'10px',borderRadius:'3px',background:b.color,flexShrink:0}}),
-          React.createElement('span',{style:{flex:1,fontSize:'0.82rem',fontWeight:500,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},b.name),
-          React.createElement('button',{onClick:()=>delBucket(b.id),style:{background:'none',border:'none',cursor:'pointer',color:C.red,fontSize:'1rem',opacity:0.7,lineHeight:1,padding:'0 2px'}},'×')
+        e('div',{style:{height:'1px',background:C.border,margin:'0.5rem 0'}}),
+        e('div',{style:{fontSize:'0.6rem',fontWeight:700,color:C.muted,letterSpacing:'0.1em'}},'SPENDING BUCKETS'),
+        ...buckets.map(b=>e('div',{key:b.id,style:{display:'flex',alignItems:'center',gap:'0.5rem',padding:'0.5rem 0.7rem',background:C.bg,borderRadius:'12px',border:`1px solid ${C.border}`}},
+          e('div',{style:{width:'10px',height:'10px',borderRadius:'3px',background:b.color,flexShrink:0}}),
+          e('span',{style:{flex:1,fontSize:'0.82rem',fontWeight:500,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},b.name),
+          e('button',{onClick:()=>delBucket(b.id),style:{background:'none',border:'none',cursor:'pointer',color:C.red,fontSize:'1rem',opacity:0.7,lineHeight:1,padding:'0 2px'}},'×')
         )),
-        React.createElement('div',{style:{display:'flex',gap:'0.35rem',alignItems:'center'}},
-          React.createElement(FInput,{value:nbName,onChange:e=>setNbName(e.target.value),onKeyDown:e=>e.key==='Enter'&&addBucket(),placeholder:'New bucket',style:{flex:1,minWidth:0}}),
-          React.createElement('div',{style:{display:'flex',gap:'3px',flexShrink:0}},
-            ...PALETTE.slice(0,4).map(c=>React.createElement('button',{key:c,onClick:()=>setNbColor(c),style:{width:'20px',height:'20px',borderRadius:'5px',background:c,border:nbColor===c?'2px solid #1A1D2E':'2px solid transparent',cursor:'pointer',flexShrink:0}}))
-          ),
-          React.createElement('button',{onClick:addBucket,style:{background:C.accent,color:'white',border:'none',borderRadius:'12px',padding:'0.5rem 0.75rem',cursor:'pointer',fontWeight:700,fontSize:'1rem',flexShrink:0}},'+')
+        e('div',{style:{display:'flex',gap:'0.35rem',alignItems:'center'}},
+          e(FInput,{value:nbName,onChange:ev=>setNbName(ev.target.value),onKeyDown:ev=>ev.key==='Enter'&&addBucket(),placeholder:'New bucket',style:{flex:1,minWidth:0}}),
+          e('div',{style:{display:'flex',gap:'3px',flexShrink:0}},...PALETTE.slice(0,4).map(c=>e('button',{key:c,onClick:()=>setNbColor(c),style:{width:'20px',height:'20px',borderRadius:'5px',background:c,border:nbColor===c?'2px solid #1A1D2E':'2px solid transparent',cursor:'pointer',flexShrink:0}}))),
+          e('button',{onClick:addBucket,style:{background:C.accent,color:'white',border:'none',borderRadius:'12px',padding:'0.5rem 0.75rem',cursor:'pointer',fontWeight:700,fontSize:'1rem',flexShrink:0}},'+')
         )
       )
     ),
 
     // Header
-    React.createElement('header',{style:{position:'sticky',top:0,zIndex:100,background:'rgba(244,246,251,0.9)',backdropFilter:'blur(14px)',borderBottom:`1px solid ${C.border}`,padding:'0.85rem 1.1rem',display:'flex',justifyContent:'space-between',alignItems:'center'}},
-      React.createElement('span',{style:{fontFamily:'cursive',fontSize:'1.7rem',color:C.accent}},'Jimikki'),
-      React.createElement('button',{onClick:()=>setSidebar(true),style:{background:'white',border:`1px solid ${C.border}`,borderRadius:'10px',padding:'0.45rem 0.7rem',cursor:'pointer',display:'flex',flexDirection:'column',gap:'4px',boxShadow:'0 1px 4px rgba(0,0,0,0.06)'}},
-        ...[0,1,2].map(i=>React.createElement('span',{key:i,style:{display:'block',width:'18px',height:'2px',background:C.sub,borderRadius:'1px'}}))
+    e('header',{style:{position:'sticky',top:0,zIndex:100,background:'rgba(244,246,251,0.9)',backdropFilter:'blur(14px)',borderBottom:`1px solid ${C.border}`,padding:'0.85rem 1.1rem',display:'flex',justifyContent:'space-between',alignItems:'center'}},
+      e('span',{style:{fontFamily:'cursive',fontSize:'1.7rem',color:C.accent}},'Jimikki'),
+      e('button',{onClick:()=>setSidebar(true),style:{background:'white',border:`1px solid ${C.border}`,borderRadius:'10px',padding:'0.45rem 0.7rem',cursor:'pointer',display:'flex',flexDirection:'column',gap:'4px',boxShadow:'0 1px 4px rgba(0,0,0,0.06)'}},
+        ...[0,1,2].map(i=>e('span',{key:i,style:{display:'block',width:'18px',height:'2px',background:C.sub,borderRadius:'1px'}}))
       )
     ),
 
-    // Main
-    React.createElement('main',{style:{padding:'1rem',paddingBottom:'7rem',display:'flex',flexDirection:'column',gap:'1rem'}},
+    e('main',{style:{padding:'1rem',paddingBottom:'7rem',display:'flex',flexDirection:'column',gap:'1rem'}},
 
       // HOME
-      view==='home'&&React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'1rem'}},
-        // Hero
-        React.createElement('div',{style:{background:'linear-gradient(135deg,#4338CA 0%,#6366F1 60%,#818CF8 100%)',borderRadius:'24px',padding:'1.75rem 1.5rem',position:'relative',overflow:'hidden',boxShadow:'0 8px 32px rgba(79,70,229,0.3)'}},
-          React.createElement('div',{style:{position:'absolute',top:'-30px',right:'-20px',width:'130px',height:'130px',borderRadius:'50%',background:'rgba(255,255,255,0.08)'}}),
-          React.createElement('div',{style:{position:'absolute',bottom:'-40px',left:'10px',width:'90px',height:'90px',borderRadius:'50%',background:'rgba(255,255,255,0.05)'}}),
-          React.createElement('div',{style:{position:'relative'}},
-            React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:'0.5rem'}},
-              React.createElement('div',null,
-                React.createElement('div',{style:{fontSize:'0.6rem',fontWeight:700,color:'rgba(255,255,255,0.55)',letterSpacing:'0.12em',marginBottom:'4px'}},'CONSOLIDATED WEALTH'),
-                React.createElement('div',{style:{fontSize:'2.5rem',fontWeight:800,color:'white',letterSpacing:'-2px',lineHeight:1.1}},fmt(wealth(hFilter)))
-              ),
-              React.createElement(PeriodPills,{value:hStatPeriod,onChange:setHStatPeriod})
+      view==='home'&&e('div',{style:{display:'flex',flexDirection:'column',gap:'1rem'}},
+        // Hero card
+        e('div',{style:{background:'linear-gradient(135deg,#4338CA 0%,#6366F1 60%,#818CF8 100%)',borderRadius:'24px',padding:'1.75rem 1.5rem',position:'relative',overflow:'hidden',boxShadow:'0 8px 32px rgba(79,70,229,0.3)'}},
+          e('div',{style:{position:'absolute',top:'-30px',right:'-20px',width:'130px',height:'130px',borderRadius:'50%',background:'rgba(255,255,255,0.08)'}}),
+          e('div',{style:{position:'absolute',bottom:'-40px',left:'10px',width:'90px',height:'90px',borderRadius:'50%',background:'rgba(255,255,255,0.05)'}}),
+          e('div',{style:{position:'relative'}},
+            e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:'0.5rem'}},
+              e('div',null,e('div',{style:{fontSize:'0.6rem',fontWeight:700,color:'rgba(255,255,255,0.55)',letterSpacing:'0.12em',marginBottom:'4px'}},'CONSOLIDATED WEALTH'),e('div',{style:{fontSize:'2.5rem',fontWeight:800,color:'white',letterSpacing:'-2px',lineHeight:1.1}},fmt(wealth(hFilter)))),
+              e(PeriodPills,{value:hStatPeriod,onChange:setHStatPeriod})
             ),
-            React.createElement('div',{style:{display:'flex',gap:'1.5rem',marginTop:'1.1rem'}},
-              React.createElement('div',null,React.createElement('div',{style:{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}},'IN'),React.createElement('div',{style:{fontSize:'1rem',fontWeight:700,color:'#A7F3D0'}},fmt(hStats.inc))),
-              React.createElement('div',{style:{width:'1px',background:'rgba(255,255,255,0.15)'}}),
-              React.createElement('div',null,React.createElement('div',{style:{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}},'OUT'),React.createElement('div',{style:{fontSize:'1rem',fontWeight:700,color:'#FCA5A5'}},fmt(hStats.spd))),
-              React.createElement('div',{style:{width:'1px',background:'rgba(255,255,255,0.15)'}}),
-              React.createElement('div',null,React.createElement('div',{style:{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}},'SAVED'),React.createElement('div',{style:{fontSize:'1rem',fontWeight:700,color:'white'}},fmt(Math.max(0,hStats.inc-hStats.spd))))
+            e('div',{style:{display:'flex',gap:'1.5rem',marginTop:'1.1rem'}},
+              e('div',null,e('div',{style:{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}},'IN'),e('div',{style:{fontSize:'1rem',fontWeight:700,color:'#A7F3D0'}},fmt(hStats.inc))),
+              e('div',{style:{width:'1px',background:'rgba(255,255,255,0.15)'}}),
+              e('div',null,e('div',{style:{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}},'OUT'),e('div',{style:{fontSize:'1rem',fontWeight:700,color:'#FCA5A5'}},fmt(hStats.spd))),
+              e('div',{style:{width:'1px',background:'rgba(255,255,255,0.15)'}}),
+              e('div',null,e('div',{style:{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}},'SAVED'),e('div',{style:{fontSize:'1rem',fontWeight:700,color:'white'}},fmt(Math.max(0,hStats.inc-hStats.spd))))
             )
           )
         ),
-        // Holder filter chips
-        actH.length>0&&React.createElement('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}},
-          React.createElement(Chip,{label:'All',active:!hFilter,onClick:()=>setHFilter(null)}),
-          ...actH.map(h=>React.createElement(Chip,{key:h.id,label:h.name,active:hFilter===h.id,onClick:()=>setHFilter(hFilter===h.id?null:h.id)}))
-        ),
-        // Chart card
-        React.createElement(Card,null,
-          React.createElement('div',{style:{display:'flex',background:C.bg,borderRadius:'12px',padding:'3px',marginBottom:'0.9rem'}},
-            ...[['income','Income',C.green],['spending','Spending',C.red],['net','Net Savings',C.accent]].map(([m,l,col])=>
-              React.createElement('button',{key:m,onClick:()=>setHMetric(m),style:{flex:1,padding:'0.4rem 0.25rem',borderRadius:'9px',border:'none',background:hMetric===m?'white':'transparent',color:hMetric===m?col:C.muted,cursor:'pointer',fontWeight:hMetric===m?700:400,fontSize:'0.73rem',boxShadow:hMetric===m?'0 1px 6px rgba(0,0,0,0.08)':'none',transition:'all .15s'}},l)
-            )
+        actH.length>0&&e('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}},e(Chip,{label:'All',active:!hFilter,onClick:()=>setHFilter(null)}),...actH.map(x=>e(Chip,{key:x.id,label:x.name,active:hFilter===x.id,onClick:()=>setHFilter(hFilter===x.id?null:x.id)}))),
+        e(Card,null,
+          e(MetricToggle,{value:hMetric,onChange:setHMetric}),
+          e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',margin:'0.9rem 0 0.75rem',flexWrap:'wrap',gap:'0.5rem'}},
+            e('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text}},`${metricLabel(hMetric)} Trend`),
+            e('div',{style:{display:'flex',gap:'0.4rem',alignItems:'center'}},e(ChartTypeToggle,{value:hChartType,onChange:setHChartType}),e(PeriodPills,{value:hPeriod,onChange:setHPeriod}))
           ),
-          React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.75rem',flexWrap:'wrap',gap:'0.5rem'}},
-            React.createElement('div',null,
-              React.createElement('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text}},`${metricLabel(hMetric)} Trend`),
-              React.createElement('div',{style:{fontSize:'0.65rem',color:C.sub,marginTop:'1px'}},'Hover or tap a point to see amount')
-            ),
-            React.createElement('div',{style:{display:'flex',gap:'0.4rem',alignItems:'center'}},
-              React.createElement('div',{style:{display:'flex',background:C.bg,borderRadius:'9px',padding:'2px',gap:'1px'}},
-                ...[['bar','▊'],['line','∿']].map(([v,ic])=>React.createElement('button',{key:v,onClick:()=>setHChartType(v),style:{padding:'0.22rem 0.5rem',borderRadius:'7px',border:'none',background:hChartType===v?'white':'transparent',color:hChartType===v?C.accent:C.muted,cursor:'pointer',fontSize:'0.8rem',fontWeight:700,boxShadow:hChartType===v?'0 1px 4px rgba(0,0,0,0.08)':'none'}},ic))
-              ),
-              React.createElement(PeriodPills,{value:hPeriod,onChange:setHPeriod})
-            )
-          ),
-          hChartType==='bar'
-            ?React.createElement(ResponsiveContainer,{width:'100%',height:160},React.createElement(BarChart,{data:hChartData,margin:{top:4,right:4,left:-22,bottom:0}},React.createElement(CartesianGrid,{strokeDasharray:'3 3',stroke:C.border,vertical:false}),React.createElement(XAxis,{dataKey:'name',tick:axisStyle,axisLine:false,tickLine:false}),React.createElement(YAxis,{tickFormatter:fmtS,tick:axisStyle,axisLine:false,tickLine:false,domain:[0,'auto']}),React.createElement(Tooltip,{content:React.createElement(SingleTooltip),contentStyle:ttStyle,cursor:{fill:`${metricColor(hMetric)}12`}}),React.createElement(Bar,{dataKey:'Value',fill:metricColor(hMetric),radius:[6,6,0,0],maxBarSize:32})))
-            :React.createElement(ResponsiveContainer,{width:'100%',height:160},React.createElement(LineChart,{data:hChartData,margin:{top:4,right:4,left:-22,bottom:0}},React.createElement(CartesianGrid,{strokeDasharray:'3 3',stroke:C.border,vertical:false}),React.createElement(XAxis,{dataKey:'name',tick:axisStyle,axisLine:false,tickLine:false}),React.createElement(YAxis,{tickFormatter:fmtS,tick:axisStyle,axisLine:false,tickLine:false,domain:[0,'auto']}),React.createElement(Tooltip,{content:React.createElement(SingleTooltip),contentStyle:ttStyle}),React.createElement(Line,{type:'monotone',dataKey:'Value',stroke:metricColor(hMetric),strokeWidth:2.5,dot:{r:3,fill:metricColor(hMetric),strokeWidth:0},activeDot:{r:5}})))
+          hChartType==='bar'?e(BarChart,{data:hChartData,color:metricColor(hMetric)}):e(LineChart,{data:hChartData,color:metricColor(hMetric)})
         ),
-        // Holders list
         actH.length>0
-          ?React.createElement(Card,null,
-            React.createElement('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'0.85rem'}},'Your Holders'),
-            ...actH.map((h,i)=>React.createElement('div',{key:h.id,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'0.65rem 0',borderBottom:i<actH.length-1?`1px solid ${C.border}`:'none'}},
-              React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'0.75rem'}},
-                React.createElement('div',{style:{width:'38px',height:'38px',borderRadius:'12px',background:h.isPrimary?C.accentBg:C.bg,border:`1.5px solid ${h.isPrimary?C.accent:C.border}`,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:'0.92rem',color:h.isPrimary?C.accent:C.sub}},h.name.charAt(0).toUpperCase()),
-                React.createElement('div',null,
-                  React.createElement('div',{style:{fontWeight:600,fontSize:'0.88rem',color:C.text}},h.name),
-                  h.isPrimary&&React.createElement('div',{style:{fontSize:'0.6rem',color:C.accent,marginTop:'1px'}},'Primary')
-                )
-              ),
-              React.createElement('div',{style:{fontWeight:800,fontSize:'0.98rem',color:C.text}},fmt(h.balance))
-            ))
-          )
-          :React.createElement('div',{style:{background:'white',borderRadius:'20px',padding:'2.5rem 1.5rem',textAlign:'center',border:`1.5px dashed ${C.border}`}},
-            React.createElement('div',{style:{fontSize:'2rem',marginBottom:'0.75rem'}},'💳'),
-            React.createElement('div',{style:{fontWeight:700,color:C.text,marginBottom:'0.4rem'}},'No holders yet'),
-            React.createElement('div',{style:{fontSize:'0.78rem',color:C.sub}},'Open the ☰ menu to add your first money holder')
-          )
+          ?e(Card,null,e('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'0.85rem'}},'Your Holders'),...actH.map((x,i)=>e('div',{key:x.id,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'0.65rem 0',borderBottom:i<actH.length-1?`1px solid ${C.border}`:'none'}},e('div',{style:{display:'flex',alignItems:'center',gap:'0.75rem'}},e('div',{style:{width:'38px',height:'38px',borderRadius:'12px',background:x.isPrimary?C.accentBg:C.bg,border:`1.5px solid ${x.isPrimary?C.accent:C.border}`,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:'0.92rem',color:x.isPrimary?C.accent:C.sub}},x.name.charAt(0).toUpperCase()),e('div',null,e('div',{style:{fontWeight:600,fontSize:'0.88rem',color:C.text}},x.name),x.isPrimary&&e('div',{style:{fontSize:'0.6rem',color:C.accent,marginTop:'1px'}},'Primary'))),e('div',{style:{fontWeight:800,fontSize:'0.98rem',color:C.text}},fmt(x.balance)))))
+          :e('div',{style:{background:'white',borderRadius:'20px',padding:'2.5rem 1.5rem',textAlign:'center',border:`1.5px dashed ${C.border}`}},e('div',{style:{fontSize:'2rem',marginBottom:'0.75rem'}},'💳'),e('div',{style:{fontWeight:700,color:C.text,marginBottom:'0.4rem'}},'No holders yet'),e('div',{style:{fontSize:'0.78rem',color:C.sub}},'Open the ☰ menu to add your first money holder'))
       ),
 
       // ANALYTICS
-      view==='analytics'&&React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'1rem'}},
-        // Deep Research toggle header
-        React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
-          React.createElement('div',{style:{fontWeight:700,fontSize:'0.95rem',color:C.text}},'Analytics'),
-          React.createElement('button',{onClick:()=>setDeepMode(d=>!d),style:{display:'flex',alignItems:'center',gap:'6px',padding:'0.45rem 1rem',borderRadius:'999px',border:`1.5px solid ${deepMode?C.accent:C.border}`,background:deepMode?C.accent:'white',color:deepMode?'white':C.sub,cursor:'pointer',fontWeight:700,fontSize:'0.75rem',boxShadow:deepMode?`0 4px 16px ${C.accent}40`:'none',transition:'all .2s'}},`🔬 ${deepMode?'Exit Deep Research':'Deep Research'}`)
+      view==='analytics'&&e('div',{style:{display:'flex',flexDirection:'column',gap:'1rem'}},
+        e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+          e('div',{style:{fontWeight:700,fontSize:'0.95rem',color:C.text}},'Analytics'),
+          e('button',{onClick:()=>setDeepMode(d=>!d),style:{display:'flex',alignItems:'center',gap:'6px',padding:'0.45rem 1rem',borderRadius:'999px',border:`1.5px solid ${deepMode?C.accent:C.border}`,background:deepMode?C.accent:'white',color:deepMode?'white':C.sub,cursor:'pointer',fontWeight:700,fontSize:'0.75rem',boxShadow:deepMode?`0 4px 16px ${C.accent}40`:'none'}},`🔬 ${deepMode?'Exit Deep Research':'Deep Research'}`)
         ),
 
-        // DEEP RESEARCH MODE
-        deepMode&&React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'1rem'}},
-          React.createElement('div',{style:{background:'linear-gradient(135deg,#312E81,#4F46E5)',borderRadius:'20px',padding:'1.25rem',color:'white'}},
-            React.createElement('div',{style:{fontSize:'0.6rem',letterSpacing:'0.12em',opacity:.6,marginBottom:'4px'}},'DEEP RESEARCH MODE'),
-            React.createElement('div',{style:{fontWeight:800,fontSize:'1.1rem',marginBottom:'2px'}},'Monthly Analysis'),
-            React.createElement('div',{style:{fontSize:'0.72rem',opacity:.7}},'Compare months, drill into buckets, spot trends')
+        // Deep Research
+        deepMode&&e('div',{style:{display:'flex',flexDirection:'column',gap:'1rem'}},
+          e('div',{style:{background:'linear-gradient(135deg,#312E81,#4F46E5)',borderRadius:'20px',padding:'1.25rem',color:'white'}},
+            e('div',{style:{fontSize:'0.6rem',letterSpacing:'0.12em',opacity:.6,marginBottom:'4px'}},'DEEP RESEARCH MODE'),
+            e('div',{style:{fontWeight:800,fontSize:'1.1rem',marginBottom:'2px'}},'Monthly Analysis'),
+            e('div',{style:{fontSize:'0.72rem',opacity:.7}},'Compare months, drill into buckets, spot trends')
           ),
-          React.createElement(Card,null,
-            React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'0.75rem'}},
-              React.createElement('div',null,
-                React.createElement(SLabel,null,'METRIC'),
-                React.createElement('div',{style:{display:'flex',background:C.bg,borderRadius:'12px',padding:'3px'}},
-                  ...[['income','Income',C.green],['spending','Spending',C.red],['net','Net Savings',C.accent]].map(([m,l,col])=>
-                    React.createElement('button',{key:m,onClick:()=>setDrMetric(m),style:{flex:1,padding:'0.4rem 0.25rem',borderRadius:'9px',border:'none',background:drMetric===m?'white':'transparent',color:drMetric===m?col:C.muted,cursor:'pointer',fontWeight:drMetric===m?700:400,fontSize:'0.73rem',boxShadow:drMetric===m?'0 1px 6px rgba(0,0,0,0.08)':'none',transition:'all .15s'}},l)
-                  )
-                )
-              ),
-              React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.6rem'}},
-                React.createElement('div',null,React.createElement(SLabel,null,'HOLDER'),React.createElement(FSelect,{value:drHolder||'',onChange:e=>setDrHolder(e.target.value||null)},React.createElement('option',{value:''},'All Holders'),...actH.map(h=>React.createElement('option',{key:h.id,value:h.id},h.name)))),
-                React.createElement('div',null,React.createElement(SLabel,null,'BUCKET'),React.createElement(FSelect,{value:drBucket||'',onChange:e=>setDrBucket(e.target.value||null)},React.createElement('option',{value:''},'All Buckets'),...buckets.map(b=>React.createElement('option',{key:b.id,value:b.id},b.name))))
-              ),
-              React.createElement('div',null,
-                React.createElement(SLabel,null,'SHOW LAST N MONTHS'),
-                React.createElement('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap'}},
-                  ...[3,6,12,24].map(n=>React.createElement('button',{key:n,onClick:()=>setDrMonths(n),style:{padding:'4px 12px',borderRadius:'999px',border:`1px solid ${drMonths===n?C.accent:C.border}`,background:drMonths===n?C.accent:'white',color:drMonths===n?'white':C.sub,cursor:'pointer',fontSize:'0.7rem',fontWeight:700}},`${n}M`))
-                )
-              )
-            )
+          e(Card,null,e('div',{style:{display:'flex',flexDirection:'column',gap:'0.75rem'}},
+            e('div',null,e(SLabel,null,'METRIC'),e(MetricToggle,{value:drMetric,onChange:setDrMetric})),
+            e('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.6rem'}},
+              e('div',null,e(SLabel,null,'HOLDER'),e(FSelect,{value:drHolder||'',onChange:ev=>setDrHolder(ev.target.value||null)},e('option',{value:''},'All Holders'),...actH.map(x=>e('option',{key:x.id,value:x.id},x.name)))),
+              e('div',null,e(SLabel,null,'BUCKET'),e(FSelect,{value:drBucket||'',onChange:ev=>setDrBucket(ev.target.value||null)},e('option',{value:''},'All Buckets'),...buckets.map(b=>e('option',{key:b.id,value:b.id},b.name))))
+            ),
+            e('div',null,e(SLabel,null,'SHOW LAST N MONTHS'),e('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap'}},...[3,6,12,24].map(n=>e('button',{key:n,onClick:()=>setDrMonths(n),style:{padding:'4px 12px',borderRadius:'999px',border:`1px solid ${drMonths===n?C.accent:C.border}`,background:drMonths===n?C.accent:'white',color:drMonths===n?'white':C.sub,cursor:'pointer',fontSize:'0.7rem',fontWeight:700}},`${n}M`))))
+          )),
+          e(Card,null,
+            e('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'4px'}},`${metricLabel(drMetric)} — Last ${drMonths} months`),
+            e('div',{style:{fontSize:'0.65rem',color:C.sub,marginBottom:'0.85rem'}},'Monthly breakdown'),
+            e(BarChart,{data:drData,color:metricColor(drMetric),height:180})
           ),
-          React.createElement(Card,null,
-            React.createElement('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'4px'}},`${metricLabel(drMetric)} — Last ${drMonths} months`),
-            React.createElement('div',{style:{fontSize:'0.65rem',color:C.sub,marginBottom:'0.85rem'}},'Monthly breakdown'),
-            React.createElement(ResponsiveContainer,{width:'100%',height:180},React.createElement(BarChart,{data:drData,margin:{top:4,right:4,left:-22,bottom:0}},React.createElement(CartesianGrid,{strokeDasharray:'3 3',stroke:C.border,vertical:false}),React.createElement(XAxis,{dataKey:'name',tick:axisStyle,axisLine:false,tickLine:false}),React.createElement(YAxis,{tickFormatter:fmtS,tick:axisStyle,axisLine:false,tickLine:false,domain:[0,'auto']}),React.createElement(Tooltip,{content:React.createElement(DRTooltip),contentStyle:ttStyle}),React.createElement(Bar,{dataKey:'Value',fill:metricColor(drMetric),radius:[6,6,0,0],maxBarSize:28})))
+          e(Card,null,
+            e('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'0.85rem'}},'Income vs Spending vs Net'),
+            e(LineChart,{data:drData,height:180,multiLines:{Income:C.green,Spending:C.red,Net:C.accent}}),
+            e('div',{style:{display:'flex',gap:'1rem',justifyContent:'center',marginTop:'0.65rem'}},...[['Income',C.green],['Spending',C.red],['Net',C.accent]].map(([l,c])=>e('div',{key:l,style:{display:'flex',alignItems:'center',gap:'5px',fontSize:'0.68rem',color:C.sub}},e('div',{style:{width:'16px',height:'3px',background:c,borderRadius:'2px'}}),l)))
           ),
-          React.createElement(Card,null,
-            React.createElement('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'0.85rem'}},'Income vs Spending vs Net'),
-            React.createElement(ResponsiveContainer,{width:'100%',height:180},React.createElement(LineChart,{data:drData,margin:{top:4,right:4,left:-22,bottom:0}},React.createElement(CartesianGrid,{strokeDasharray:'3 3',stroke:C.border,vertical:false}),React.createElement(XAxis,{dataKey:'name',tick:axisStyle,axisLine:false,tickLine:false}),React.createElement(YAxis,{tickFormatter:fmtS,tick:axisStyle,axisLine:false,tickLine:false,domain:[0,'auto']}),React.createElement(Tooltip,{content:React.createElement(DRTooltip),contentStyle:ttStyle}),React.createElement(Line,{type:'monotone',dataKey:'Income',stroke:C.green,strokeWidth:2,dot:false,activeDot:{r:4}}),React.createElement(Line,{type:'monotone',dataKey:'Spending',stroke:C.red,strokeWidth:2,dot:false,activeDot:{r:4}}),React.createElement(Line,{type:'monotone',dataKey:'Net',stroke:C.accent,strokeWidth:2,dot:false,activeDot:{r:4}}))),
-            React.createElement('div',{style:{display:'flex',gap:'1rem',justifyContent:'center',marginTop:'0.65rem'}},
-              ...[['Income',C.green],['Spending',C.red],['Net',C.accent]].map(([l,c])=>React.createElement('div',{key:l,style:{display:'flex',alignItems:'center',gap:'5px',fontSize:'0.68rem',color:C.sub}},React.createElement('div',{style:{width:'16px',height:'3px',background:c,borderRadius:'2px'}}),l))
-            )
-          ),
-          // Month comparison
-          React.createElement(Card,null,
-            React.createElement('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'0.75rem'}},'🔁 Compare Two Months'),
-            React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.6rem',marginBottom:'0.85rem'}},
-              React.createElement('div',null,React.createElement(SLabel,null,'MONTH A'),React.createElement(FSelect,{value:drCompareA,onChange:e=>setDrCompareA(e.target.value)},React.createElement('option',{value:''},'Pick month'),...availMonths.slice().reverse().map(m=>React.createElement('option',{key:m.key,value:m.key},m.label)))),
-              React.createElement('div',null,React.createElement(SLabel,null,'MONTH B'),React.createElement(FSelect,{value:drCompareB,onChange:e=>setDrCompareB(e.target.value)},React.createElement('option',{value:''},'Pick month'),...availMonths.slice().reverse().map(m=>React.createElement('option',{key:m.key,value:m.key},m.label))))
+          e(Card,null,
+            e('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'0.75rem'}},'🔁 Compare Two Months'),
+            e('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.6rem',marginBottom:'0.85rem'}},
+              e('div',null,e(SLabel,null,'MONTH A'),e(FSelect,{value:drCompareA,onChange:ev=>setDrCompareA(ev.target.value)},e('option',{value:''},'Pick month'),...availMonths.slice().reverse().map(m=>e('option',{key:m.key,value:m.key},m.label)))),
+              e('div',null,e(SLabel,null,'MONTH B'),e(FSelect,{value:drCompareB,onChange:ev=>setDrCompareB(ev.target.value)},e('option',{value:''},'Pick month'),...availMonths.slice().reverse().map(m=>e('option',{key:m.key,value:m.key},m.label))))
             ),
             drCompareA&&drCompareB&&drCompareA!==drCompareB?(()=>{
-              const aInc=getDRCompareStats(drCompareA,'income'),aSpd=getDRCompareStats(drCompareA,'spending'),aNet=getDRCompareStats(drCompareA,'net');
-              const bInc=getDRCompareStats(drCompareB,'income'),bSpd=getDRCompareStats(drCompareB,'spending'),bNet=getDRCompareStats(drCompareB,'net');
-              const aLabel=availMonths.find(m=>m.key===drCompareA)?.label||drCompareA;
-              const bLabel=availMonths.find(m=>m.key===drCompareB)?.label||drCompareB;
-              const Row=({label,va,vb})=>{const diff=va-vb;const pct=vb>0?((Math.abs(diff)/vb)*100).toFixed(1):'—';return React.createElement('div',{style:{display:'grid',gridTemplateColumns:'80px 1fr 1fr 80px',gap:'0.4rem',alignItems:'center',padding:'0.5rem 0',borderBottom:`1px solid ${C.border}`}},React.createElement('span',{style:{fontSize:'0.7rem',color:C.sub,fontWeight:600}},label),React.createElement('span',{style:{fontSize:'0.82rem',fontWeight:700,color:C.text,textAlign:'right'}},fmt(va)),React.createElement('span',{style:{fontSize:'0.82rem',fontWeight:700,color:C.text,textAlign:'right'}},fmt(vb)),React.createElement('span',{style:{fontSize:'0.68rem',fontWeight:700,color:diff>0?C.green:diff<0?C.red:C.muted,textAlign:'right'}},diff===0?'—':`${diff>0?'+':'-'}${pct}%`));};
-              return React.createElement('div',null,
-                React.createElement('div',{style:{display:'grid',gridTemplateColumns:'80px 1fr 1fr 80px',gap:'0.4rem',marginBottom:'4px'}},React.createElement('span'),React.createElement('span',{style:{fontSize:'0.65rem',fontWeight:700,color:C.accent,textAlign:'right'}},aLabel),React.createElement('span',{style:{fontSize:'0.65rem',fontWeight:700,color:C.sub,textAlign:'right'}},bLabel),React.createElement('span',{style:{fontSize:'0.65rem',color:C.muted,textAlign:'right'}},'Δ')),
-                React.createElement(Row,{label:'Income',va:aInc,vb:bInc}),React.createElement(Row,{label:'Spending',va:aSpd,vb:bSpd}),React.createElement(Row,{label:'Net',va:aNet,vb:bNet})
+              const aI=getDRStats(drCompareA,'income'),aS=getDRStats(drCompareA,'spending'),aN=getDRStats(drCompareA,'net');
+              const bI=getDRStats(drCompareB,'income'),bS=getDRStats(drCompareB,'spending'),bN=getDRStats(drCompareB,'net');
+              const aL=availMonths.find(m=>m.key===drCompareA)?.label||drCompareA,bL=availMonths.find(m=>m.key===drCompareB)?.label||drCompareB;
+              const Row=({label,va,vb})=>{const diff=va-vb,pct=vb>0?((Math.abs(diff)/vb)*100).toFixed(1):'—';return e('div',{style:{display:'grid',gridTemplateColumns:'70px 1fr 1fr 70px',gap:'0.4rem',alignItems:'center',padding:'0.5rem 0',borderBottom:`1px solid ${C.border}`}},e('span',{style:{fontSize:'0.7rem',color:C.sub,fontWeight:600}},label),e('span',{style:{fontSize:'0.8rem',fontWeight:700,color:C.text,textAlign:'right'}},fmt(va)),e('span',{style:{fontSize:'0.8rem',fontWeight:700,color:C.text,textAlign:'right'}},fmt(vb)),e('span',{style:{fontSize:'0.68rem',fontWeight:700,color:diff>0?C.green:diff<0?C.red:C.muted,textAlign:'right'}},diff===0?'—':`${diff>0?'+':'-'}${pct}%`));};
+              return e('div',null,
+                e('div',{style:{display:'grid',gridTemplateColumns:'70px 1fr 1fr 70px',gap:'0.4rem',marginBottom:'4px'}},e('span'),e('span',{style:{fontSize:'0.65rem',fontWeight:700,color:C.accent,textAlign:'right'}},aL),e('span',{style:{fontSize:'0.65rem',fontWeight:700,color:C.sub,textAlign:'right'}},bL),e('span',{style:{fontSize:'0.65rem',color:C.muted,textAlign:'right'}},'Δ')),
+                e(Row,{label:'Income',va:aI,vb:bI}),e(Row,{label:'Spending',va:aS,vb:bS}),e(Row,{label:'Net',va:aN,vb:bN})
               );
-            })()
-            :React.createElement('div',{style:{fontSize:'0.78rem',color:C.muted,textAlign:'center',padding:'0.75rem 0'}},'Select two different months to compare')
+            })():e('div',{style:{fontSize:'0.78rem',color:C.muted,textAlign:'center',padding:'0.75rem 0'}},'Select two different months to compare')
           ),
           drCompareA&&(()=>{
-            const bd=getDRBucketBreakdown(drCompareA);const bdTotal=bd.reduce((s,b)=>s+b.total,0);const aLabel=availMonths.find(m=>m.key===drCompareA)?.label||drCompareA;
+            const bd=getDRBuckets(drCompareA),bdT=bd.reduce((s,b)=>s+b.total,0),aL=availMonths.find(m=>m.key===drCompareA)?.label||drCompareA;
             if(!bd.length)return null;
-            return React.createElement(Card,null,
-              React.createElement('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'4px'}},`🪣 Bucket Breakdown — ${aLabel}`),
-              React.createElement('div',{style:{fontSize:'0.65rem',color:C.sub,marginBottom:'0.85rem'}},'Spending distribution for month A'),
-              ...bd.map(b=>{const pct=bdTotal>0?((b.total/bdTotal)*100).toFixed(1):0;return React.createElement('div',{key:b.id,style:{marginBottom:'0.65rem'}},React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}},React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'7px'}},React.createElement('div',{style:{width:'9px',height:'9px',borderRadius:'3px',background:b.color}}),React.createElement('span',{style:{fontSize:'0.8rem',fontWeight:600,color:C.text}},b.name)),React.createElement('div',null,React.createElement('span',{style:{fontSize:'0.8rem',fontWeight:700,color:C.text}},fmt(b.total)),React.createElement('span',{style:{fontSize:'0.62rem',color:C.muted,marginLeft:'5px'}},`${pct}%`))),React.createElement('div',{style:{height:'5px',background:C.bg,borderRadius:'3px',overflow:'hidden'}},React.createElement('div',{style:{height:'100%',width:`${pct}%`,background:b.color,borderRadius:'3px',transition:'width .4s'}})));})
+            return e(Card,null,e('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'4px'}},`🪣 Buckets — ${aL}`),...bd.map(b=>{const pct=bdT>0?((b.total/bdT)*100).toFixed(1):0;return e('div',{key:b.id,style:{marginBottom:'0.65rem'}},e('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'4px'}},e('div',{style:{display:'flex',alignItems:'center',gap:'7px'}},e('div',{style:{width:'9px',height:'9px',borderRadius:'3px',background:b.color}}),e('span',{style:{fontSize:'0.8rem',fontWeight:600,color:C.text}},b.name)),e('div',null,e('span',{style:{fontSize:'0.8rem',fontWeight:700,color:C.text}},fmt(b.total)),e('span',{style:{fontSize:'0.62rem',color:C.muted,marginLeft:'5px'}},`${pct}%`))),e('div',{style:{height:'5px',background:C.bg,borderRadius:'3px',overflow:'hidden'}},e('div',{style:{height:'100%',width:`${pct}%`,background:b.color,borderRadius:'3px'}})));})
             );
           })(),
-          React.createElement(Card,null,
-            React.createElement('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'0.85rem'}},`📅 Monthly Table — Last ${drMonths} months`),
-            React.createElement('div',{style:{overflowX:'auto'}},
-              React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'0.73rem'}},
-                React.createElement('thead',null,React.createElement('tr',null,...['Month','Income','Spending','Net'].map(h=>React.createElement('th',{key:h,style:{padding:'0.4rem 0.5rem',textAlign:'right',color:C.muted,fontWeight:700,fontSize:'0.62rem',letterSpacing:'0.06em',whiteSpace:'nowrap',borderBottom:`1px solid ${C.border}`}},h)))),
-                React.createElement('tbody',null,...[...drData].reverse().map((row,i)=>React.createElement('tr',{key:row.key,style:{background:i%2===0?'transparent':C.bg+'80'}},React.createElement('td',{style:{padding:'0.45rem 0.5rem',fontWeight:700,color:C.text,whiteSpace:'nowrap'}},row.name),React.createElement('td',{style:{padding:'0.45rem 0.5rem',textAlign:'right',color:C.green,fontWeight:600}},fmtS(row.Income)),React.createElement('td',{style:{padding:'0.45rem 0.5rem',textAlign:'right',color:C.red,fontWeight:600}},fmtS(row.Spending)),React.createElement('td',{style:{padding:'0.45rem 0.5rem',textAlign:'right',color:C.accent,fontWeight:700}},fmtS(row.Net)))))
-              )
-            )
+          e(Card,null,
+            e('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'0.85rem'}},`📅 Monthly Table — Last ${drMonths} months`),
+            e('div',{style:{overflowX:'auto'}},e('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'0.73rem'}},
+              e('thead',null,e('tr',null,...['Month','Income','Spending','Net'].map(lbl=>e('th',{key:lbl,style:{padding:'0.4rem 0.5rem',textAlign:'right',color:C.muted,fontWeight:700,fontSize:'0.62rem',letterSpacing:'0.06em',borderBottom:`1px solid ${C.border}`,whiteSpace:'nowrap'}},lbl)))),
+              e('tbody',null,...[...drData].reverse().map((row,i)=>e('tr',{key:row.key,style:{background:i%2===0?'transparent':C.bg+'80'}},e('td',{style:{padding:'0.45rem 0.5rem',fontWeight:700,color:C.text,whiteSpace:'nowrap'}},row.name),e('td',{style:{padding:'0.45rem 0.5rem',textAlign:'right',color:C.green,fontWeight:600}},fmtS(row.Income)),e('td',{style:{padding:'0.45rem 0.5rem',textAlign:'right',color:C.red,fontWeight:600}},fmtS(row.Spending)),e('td',{style:{padding:'0.45rem 0.5rem',textAlign:'right',color:C.accent,fontWeight:700}},fmtS(row.Net)))))
+            ))
           )
         ),
 
-        // NORMAL ANALYTICS
-        !deepMode&&React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'1rem'}},
-          React.createElement(Card,{style:{padding:'1rem'}},
-            React.createElement('div',{style:{fontSize:'0.65rem',fontWeight:700,color:C.muted,letterSpacing:'0.08em',marginBottom:'0.5rem'}},'FILTER BY HOLDER'),
-            React.createElement('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'0.75rem'}},React.createElement(Chip,{label:'All Holders',active:!aHFilter,onClick:()=>setAHFilter(null)}),...actH.map(h=>React.createElement(Chip,{key:h.id,label:h.name,active:aHFilter===h.id,onClick:()=>setAHFilter(aHFilter===h.id?null:h.id)}))),
-            React.createElement('div',{style:{fontSize:'0.65rem',fontWeight:700,color:C.muted,letterSpacing:'0.08em',marginBottom:'0.5rem'}},'FILTER BY BUCKET'),
-            React.createElement('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}},React.createElement(Chip,{label:'All Buckets',active:!aBFilter,onClick:()=>setABFilter(null)}),...buckets.map(b=>React.createElement(Chip,{key:b.id,label:b.name,active:aBFilter===b.id,dot:b.color,onClick:()=>setABFilter(aBFilter===b.id?null:b.id)})))
+        // Normal Analytics
+        !deepMode&&e('div',{style:{display:'flex',flexDirection:'column',gap:'1rem'}},
+          e(Card,{style:{padding:'1rem'}},
+            e('div',{style:{fontSize:'0.65rem',fontWeight:700,color:C.muted,letterSpacing:'0.08em',marginBottom:'0.5rem'}},'FILTER BY HOLDER'),
+            e('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'0.75rem'}},e(Chip,{label:'All Holders',active:!aHFilter,onClick:()=>setAHFilter(null)}),...actH.map(x=>e(Chip,{key:x.id,label:x.name,active:aHFilter===x.id,onClick:()=>setAHFilter(aHFilter===x.id?null:x.id)}))),
+            e('div',{style:{fontSize:'0.65rem',fontWeight:700,color:C.muted,letterSpacing:'0.08em',marginBottom:'0.5rem'}},'FILTER BY BUCKET'),
+            e('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}},e(Chip,{label:'All Buckets',active:!aBFilter,onClick:()=>setABFilter(null)}),...buckets.map(b=>e(Chip,{key:b.id,label:b.name,active:aBFilter===b.id,dot:b.color,onClick:()=>setABFilter(aBFilter===b.id?null:b.id)})))
           ),
-          React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'0.5rem'}},
+          e('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'0.5rem'}},
             ...[{l:'INCOME',v:fmt(actT.filter(t=>t.type==='income'&&(!aHFilter||t.holderId===aHFilter)).reduce((s,t)=>s+t.amount,0)),col:C.green},{l:'SPENDING',v:fmt(actT.filter(t=>t.type==='spending'&&(!aHFilter||t.holderId===aHFilter)&&(!aBFilter||t.bucketId===aBFilter)).reduce((s,t)=>s+t.amount,0)),col:C.red},{l:'BALANCE',v:fmt(wealth(aHFilter)),col:C.accent}].map(({l,v,col})=>
-              React.createElement('div',{key:l,style:{background:'white',borderRadius:'16px',padding:'0.85rem 0.75rem',border:`1px solid ${C.border}`,textAlign:'center',boxShadow:'0 2px 8px rgba(0,0,0,0.04)'}},React.createElement('div',{style:{fontSize:'0.55rem',fontWeight:700,color:C.muted,letterSpacing:'0.1em',marginBottom:'4px'}},l),React.createElement('div',{style:{fontSize:'0.82rem',fontWeight:800,color:col}},v))
+              e('div',{key:l,style:{background:'white',borderRadius:'16px',padding:'0.85rem 0.75rem',border:`1px solid ${C.border}`,textAlign:'center',boxShadow:'0 2px 8px rgba(0,0,0,0.04)'}},e('div',{style:{fontSize:'0.55rem',fontWeight:700,color:C.muted,letterSpacing:'0.1em',marginBottom:'4px'}},l),e('div',{style:{fontSize:'0.82rem',fontWeight:800,color:col}},v))
             )
           ),
-          React.createElement('div',{style:{display:'flex',background:'white',borderRadius:'14px',padding:'4px',border:`1px solid ${C.border}`,boxShadow:'0 2px 8px rgba(0,0,0,0.04)'}},
-            ...[['flow','📈 Flow'],['buckets','🪣 Buckets']].map(([v,l])=>React.createElement('button',{key:v,onClick:()=>setAView(v),style:{flex:1,padding:'0.5rem',borderRadius:'10px',border:'none',background:aView===v?C.accent:'transparent',color:aView===v?'white':C.sub,cursor:'pointer',fontWeight:700,fontSize:'0.82rem',transition:'all .15s'}},l))
+          e('div',{style:{display:'flex',background:'white',borderRadius:'14px',padding:'4px',border:`1px solid ${C.border}`,boxShadow:'0 2px 8px rgba(0,0,0,0.04)'}},...[['flow','📈 Flow'],['buckets','🪣 Buckets']].map(([v,l])=>e('button',{key:v,onClick:()=>setAView(v),style:{flex:1,padding:'0.5rem',borderRadius:'10px',border:'none',background:aView===v?C.accent:'transparent',color:aView===v?'white':C.sub,cursor:'pointer',fontWeight:700,fontSize:'0.82rem'}},l))),
+          aView==='flow'&&e(Card,null,
+            e(MetricToggle,{value:aMetric,onChange:setAMetric}),
+            e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',margin:'0.9rem 0 0.75rem',flexWrap:'wrap',gap:'0.5rem'}},
+              e('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text}},`${metricLabel(aMetric)} Trend`),
+              e('div',{style:{display:'flex',gap:'0.4rem',alignItems:'center'}},e(ChartTypeToggle,{value:aChartType,onChange:setAChartType}),e(PeriodPills,{value:aPeriod,onChange:setAPeriod}))
+            ),
+            aChartType==='bar'?e(BarChart,{data:aChartData,color:metricColor(aMetric)}):e(LineChart,{data:aChartData,color:metricColor(aMetric)})
           ),
-          aView==='flow'&&React.createElement(Card,null,
-            React.createElement('div',{style:{display:'flex',background:C.bg,borderRadius:'12px',padding:'3px',marginBottom:'0.9rem'}},
-              ...[['income','Income',C.green],['spending','Spending',C.red],['net','Net Savings',C.accent]].map(([m,l,col])=>React.createElement('button',{key:m,onClick:()=>setAMetric(m),style:{flex:1,padding:'0.4rem 0.25rem',borderRadius:'9px',border:'none',background:aMetric===m?'white':'transparent',color:aMetric===m?col:C.muted,cursor:'pointer',fontWeight:aMetric===m?700:400,fontSize:'0.73rem',boxShadow:aMetric===m?'0 1px 6px rgba(0,0,0,0.08)':'none',transition:'all .15s'}},l))
-            ),
-            React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.75rem',flexWrap:'wrap',gap:'0.5rem'}},
-              React.createElement('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text}},`${aMetric==='income'?'Income':aMetric==='spending'?'Spending':'Net Savings'} Trend`),
-              React.createElement('div',{style:{display:'flex',gap:'0.4rem',alignItems:'center'}},
-                React.createElement('div',{style:{display:'flex',background:C.bg,borderRadius:'9px',padding:'2px',gap:'1px'}},
-                  ...[['bar','▊'],['line','∿']].map(([v,ic])=>React.createElement('button',{key:v,onClick:()=>setAChartType(v),style:{padding:'0.22rem 0.5rem',borderRadius:'7px',border:'none',background:aChartType===v?'white':'transparent',color:aChartType===v?C.accent:C.muted,cursor:'pointer',fontSize:'0.8rem',fontWeight:700,boxShadow:aChartType===v?'0 1px 4px rgba(0,0,0,0.08)':'none'}},ic))
-                ),
-                React.createElement(PeriodPills,{value:aPeriod,onChange:setAPeriod})
-              )
-            ),
-            aChartType==='bar'
-              ?React.createElement(ResponsiveContainer,{width:'100%',height:160},React.createElement(BarChart,{data:aChartData,margin:{top:4,right:4,left:-22,bottom:0}},React.createElement(CartesianGrid,{strokeDasharray:'3 3',stroke:C.border,vertical:false}),React.createElement(XAxis,{dataKey:'name',tick:axisStyle,axisLine:false,tickLine:false}),React.createElement(YAxis,{tickFormatter:fmtS,tick:axisStyle,axisLine:false,tickLine:false,domain:[0,'auto']}),React.createElement(Tooltip,{content:React.createElement(ASingleTooltip),contentStyle:ttStyle,cursor:{fill:`${aMetricColor}12`}}),React.createElement(Bar,{dataKey:'Value',fill:aMetricColor,radius:[6,6,0,0],maxBarSize:32})))
-              :React.createElement(ResponsiveContainer,{width:'100%',height:160},React.createElement(LineChart,{data:aChartData,margin:{top:4,right:4,left:-22,bottom:0}},React.createElement(CartesianGrid,{strokeDasharray:'3 3',stroke:C.border,vertical:false}),React.createElement(XAxis,{dataKey:'name',tick:axisStyle,axisLine:false,tickLine:false}),React.createElement(YAxis,{tickFormatter:fmtS,tick:axisStyle,axisLine:false,tickLine:false,domain:[0,'auto']}),React.createElement(Tooltip,{content:React.createElement(ASingleTooltip),contentStyle:ttStyle}),React.createElement(Line,{type:'monotone',dataKey:'Value',stroke:aMetricColor,strokeWidth:2.5,dot:{r:3,fill:aMetricColor,strokeWidth:0},activeDot:{r:5}})))
-          ),
-          aView==='buckets'&&React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'1rem'}},
-            React.createElement(Card,{style:{padding:'0.85rem 1rem'}},
-              React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'0.5rem'}},
-                React.createElement('div',{style:{fontSize:'0.65rem',fontWeight:700,color:C.muted,letterSpacing:'0.08em'}},'TIME PERIOD'),
-                React.createElement(PeriodPills,{value:bktPeriod,onChange:setBktPeriod})
-              )
-            ),
+          aView==='buckets'&&e('div',{style:{display:'flex',flexDirection:'column',gap:'1rem'}},
+            e(Card,{style:{padding:'0.85rem 1rem'}},e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'0.5rem'}},e('div',{style:{fontSize:'0.65rem',fontWeight:700,color:C.muted,letterSpacing:'0.08em'}},'TIME PERIOD'),e(PeriodPills,{value:bktPeriod,onChange:setBktPeriod}))),
             bStats.length===0
-              ?React.createElement('div',{style:{background:'white',borderRadius:'20px',padding:'2rem',textAlign:'center',border:`1.5px dashed ${C.border}`}},React.createElement('div',{style:{fontSize:'2rem',marginBottom:'0.65rem'}},'🪣'),React.createElement('div',{style:{fontWeight:700,color:C.text,marginBottom:'4px'}},'No spending data for this period'),React.createElement('div',{style:{fontSize:'0.75rem',color:C.sub}},'Try a different time range or add spending entries'))
-              :React.createElement(Card,null,
-                React.createElement('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'1rem'}},'Spending by Bucket'),
-                React.createElement('div',{style:{display:'flex',justifyContent:'center',marginBottom:'1rem'}},
-                  React.createElement(PieChart,{width:180,height:180},React.createElement(Pie,{data:bStats,dataKey:'total',cx:'50%',cy:'50%',innerRadius:52,outerRadius:82,paddingAngle:3},...bStats.map(b=>React.createElement(Cell,{key:b.id,fill:b.color}))),React.createElement(Tooltip,{formatter:v=>fmt(v),contentStyle:{background:'white',border:`1px solid ${C.border}`,borderRadius:'10px',fontSize:'0.78rem'}}))
-                ),
-                ...bStats.map(b=>{const pct=bTotal>0?((b.total/bTotal)*100).toFixed(1):0;return React.createElement('div',{key:b.id,style:{marginBottom:'0.75rem'}},React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'5px'}},React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},React.createElement('div',{style:{width:'10px',height:'10px',borderRadius:'3px',background:b.color,flexShrink:0}}),React.createElement('span',{style:{fontSize:'0.83rem',fontWeight:600,color:C.text}},b.name)),React.createElement('div',null,React.createElement('span',{style:{fontSize:'0.83rem',fontWeight:700,color:C.text}},fmt(b.total)),React.createElement('span',{style:{fontSize:'0.65rem',color:C.muted,marginLeft:'6px'}},`${pct}%`))),React.createElement('div',{style:{height:'5px',background:C.bg,borderRadius:'3px',overflow:'hidden'}},React.createElement('div',{style:{height:'100%',width:`${pct}%`,background:b.color,borderRadius:'3px',transition:'width .4s'}})));})
+              ?e('div',{style:{background:'white',borderRadius:'20px',padding:'2rem',textAlign:'center',border:`1.5px dashed ${C.border}`}},e('div',{style:{fontSize:'2rem',marginBottom:'0.65rem'}},'🪣'),e('div',{style:{fontWeight:700,color:C.text,marginBottom:'4px'}},'No spending data for this period'),e('div',{style:{fontSize:'0.75rem',color:C.sub}},'Try a different time range'))
+              :e(Card,null,
+                e('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'1rem'}},'Spending by Bucket'),
+                e('div',{style:{display:'flex',justifyContent:'center',marginBottom:'1rem'}},e(DonutChart,{data:bStats})),
+                ...bStats.map(b=>{const pct=bTotal>0?((b.total/bTotal)*100).toFixed(1):0;return e('div',{key:b.id,style:{marginBottom:'0.75rem'}},e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'5px'}},e('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},e('div',{style:{width:'10px',height:'10px',borderRadius:'3px',background:b.color,flexShrink:0}}),e('span',{style:{fontSize:'0.83rem',fontWeight:600,color:C.text}},b.name)),e('div',null,e('span',{style:{fontSize:'0.83rem',fontWeight:700,color:C.text}},fmt(b.total)),e('span',{style:{fontSize:'0.65rem',color:C.muted,marginLeft:'6px'}},`${pct}%`))),e('div',{style:{height:'5px',background:C.bg,borderRadius:'3px',overflow:'hidden'}},e('div',{style:{height:'100%',width:`${pct}%`,background:b.color,borderRadius:'3px'}})));})
               )
           ),
-          React.createElement(Card,null,
-            React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.75rem',flexWrap:'wrap',gap:'0.5rem'}},
-              React.createElement('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text}},`Transactions `,React.createElement('span',{style:{fontWeight:400,color:C.muted,fontSize:'0.72rem'}},`(${filteredATxns.length})`)),
-              React.createElement(PeriodPills,{value:aTxnPeriod,onChange:setATxnPeriod})
+          e(Card,null,
+            e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.75rem',flexWrap:'wrap',gap:'0.5rem'}},
+              e('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text}},'Transactions ',e('span',{style:{fontWeight:400,color:C.muted,fontSize:'0.72rem'}},`(${filteredATxns.length})`)),
+              e(PeriodPills,{value:aTxnPeriod,onChange:setATxnPeriod})
             ),
-            filteredATxns.length===0
-              ?React.createElement('div',{style:{color:C.muted,fontSize:'0.8rem',textAlign:'center',padding:'1.5rem 0'}},'No transactions for this period')
-              :filteredATxns.map(t=>React.createElement(TxnRow,{key:t.id,t,onDel:()=>delTxn(t.id)}))
+            filteredATxns.length===0?e('div',{style:{color:C.muted,fontSize:'0.8rem',textAlign:'center',padding:'1.5rem 0'}},'No transactions for this period'):filteredATxns.map(t=>e(TxnRow,{key:t.id,t,onDel:()=>delTxn(t.id)}))
           ),
-          delT.length>0&&React.createElement(Card,null,
-            React.createElement('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'0.85rem'}},`🗑 Recycle Bin `,React.createElement('span',{style:{fontWeight:400,color:C.muted,fontSize:'0.72rem'}},`(${delT.length})`)),
-            ...delT.map(t=>React.createElement(TxnRow,{key:t.id,t,onRest:()=>restTxn(t.id)}))
-          )
+          delT.length>0&&e(Card,null,e('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'0.85rem'}},'🗑 Recycle Bin ',e('span',{style:{fontWeight:400,color:C.muted,fontSize:'0.72rem'}},`(${delT.length})`)),...delT.map(t=>e(TxnRow,{key:t.id,t,onRest:()=>restTxn(t.id)})))
         )
       )
     ),
 
     // Bottom nav
-    React.createElement('nav',{style:{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:'480px',background:'rgba(255,255,255,0.95)',backdropFilter:'blur(16px)',borderTop:`1px solid ${C.border}`,display:'flex',alignItems:'center',zIndex:90,height:'64px',boxShadow:'0 -2px 16px rgba(0,0,0,0.06)'}},
-      React.createElement('button',{onClick:()=>setView('home'),style:{flex:1,height:'100%',background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'2px',color:view==='home'?C.accent:C.muted}},React.createElement('span',{style:{fontSize:'1.1rem'}},'🏠'),React.createElement('span',{style:{fontSize:'0.6rem',fontWeight:view==='home'?700:400}},'Home')),
-      React.createElement('div',{style:{flex:'0 0 80px',display:'flex',justifyContent:'center',alignItems:'center'}},
-        React.createElement('button',{onClick:()=>{setFabOpen(true);setFabMode(null);},style:{width:'52px',height:'52px',borderRadius:'16px',background:C.accent,border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:`0 6px 20px rgba(79,70,229,0.4)`,transform:'translateY(-10px)',color:'white',flexShrink:0,lineHeight:1}},
-          React.createElement('svg',{width:24,height:24,viewBox:'0 0 24 24',fill:'none',stroke:'currentColor',strokeWidth:'2.5',strokeLinecap:'round'},React.createElement('line',{x1:12,y1:5,x2:12,y2:19}),React.createElement('line',{x1:5,y1:12,x2:19,y2:12}))
+    e('nav',{style:{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:'480px',background:'rgba(255,255,255,0.95)',backdropFilter:'blur(16px)',borderTop:`1px solid ${C.border}`,display:'flex',alignItems:'center',zIndex:90,height:'64px',boxShadow:'0 -2px 16px rgba(0,0,0,0.06)'}},
+      e('button',{onClick:()=>setView('home'),style:{flex:1,height:'100%',background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'2px',color:view==='home'?C.accent:C.muted}},e('span',{style:{fontSize:'1.1rem'}},'🏠'),e('span',{style:{fontSize:'0.6rem',fontWeight:view==='home'?700:400}},'Home')),
+      e('div',{style:{flex:'0 0 80px',display:'flex',justifyContent:'center',alignItems:'center'}},
+        e('button',{onClick:()=>{setFabOpen(true);setFabMode(null);},style:{width:'52px',height:'52px',borderRadius:'16px',background:C.accent,border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:`0 6px 20px rgba(79,70,229,0.4)`,transform:'translateY(-10px)',color:'white',flexShrink:0}},
+          e('svg',{width:24,height:24,viewBox:'0 0 24 24',fill:'none',stroke:'currentColor',strokeWidth:'2.5',strokeLinecap:'round'},e('line',{x1:12,y1:5,x2:12,y2:19}),e('line',{x1:5,y1:12,x2:19,y2:12}))
         )
       ),
-      React.createElement('button',{onClick:()=>setView('analytics'),style:{flex:1,height:'100%',background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'2px',color:view==='analytics'?C.accent:C.muted}},React.createElement('span',{style:{fontSize:'1.1rem'}},'📊'),React.createElement('span',{style:{fontSize:'0.6rem',fontWeight:view==='analytics'?700:400}},'Analytics'))
+      e('button',{onClick:()=>setView('analytics'),style:{flex:1,height:'100%',background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'2px',color:view==='analytics'?C.accent:C.muted}},e('span',{style:{fontSize:'1.1rem'}},'📊'),e('span',{style:{fontSize:'0.6rem',fontWeight:view==='analytics'?700:400}},'Analytics'))
     )
   );
 }
 
-const root=ReactDOM.createRoot(document.getElementById('root'));
-root.render(React.createElement(Jimikki));
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Jimikki));
 </script>
 </body>
 </html>
