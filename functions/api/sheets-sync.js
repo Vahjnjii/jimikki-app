@@ -60,10 +60,9 @@ async function getAccessToken(env) {
   return data.access_token;
 }
 
-// ── Create new Sheet via Drive API (avoids Sheets API permission issue) ──
+// ── Create new Sheet via Drive API ──────────────────────────────────────
 async function createSheet(token, userName, folderId) {
-  // Step 1: Create file via Drive API as Google Sheets MIME type
-  const parents = folderId ? [folderId] : [];
+  // Step 1: Create in service account root (no storage quota issue)
   const res = await fetch('https://www.googleapis.com/drive/v3/files', {
     method: 'POST',
     headers: {
@@ -72,12 +71,24 @@ async function createSheet(token, userName, folderId) {
     },
     body: JSON.stringify({
       name: `Jimikki — ${userName}`,
-      mimeType: 'application/vnd.google-apps.spreadsheet',
-      parents: parents
+      mimeType: 'application/vnd.google-apps.spreadsheet'
     })
   });
   const data = await res.json();
-  if (!data.id) throw new Error('Sheet creation via Drive failed: ' + JSON.stringify(data));
+  if (!data.id) throw new Error('Sheet creation failed: ' + JSON.stringify(data));
+
+  // Step 2: Move into the shared folder in YOUR Drive
+  if (folderId) {
+    await fetch(
+      `https://www.googleapis.com/drive/v3/files/${data.id}?addParents=${folderId}&removeParents=root&fields=id,parents`,
+      {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      }
+    );
+  }
+
   return data.id;
 }
 
