@@ -51,8 +51,8 @@ export async function onRequestGet(context) {
     const token = tokenData.access_token;
     results.token = token ? 'OK ✅' : 'FAILED';
 
-    // ── Test: Create sheet via DRIVE API (not Sheets API) ──
-    const driveCreateRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+    // ── Step 1: Create sheet with NO parents (uses service acct drive) ──
+    const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -60,31 +60,46 @@ export async function onRequestGet(context) {
       },
       body: JSON.stringify({
         name: 'Jimikki Debug Test — delete me',
-        mimeType: 'application/vnd.google-apps.spreadsheet',
-        parents: folderId ? [folderId] : []
+        mimeType: 'application/vnd.google-apps.spreadsheet'
+        // NO parents — creates in service account root
       })
     });
-    const driveCreateData = await driveCreateRes.json();
+    const createData = await createRes.json();
 
-    if (driveCreateData.id) {
-      results.sheet_via_drive = 'SUCCESS ✅ id=' + driveCreateData.id;
-      results.sheet_url = 'https://docs.google.com/spreadsheets/d/' + driveCreateData.id;
-
-      // Test writing to the sheet
-      const writeRes = await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${driveCreateData.id}/values/A1?valueInputOption=RAW`,
-        {
-          method: 'PUT',
-          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ values: [['TEST ✅', 'Sheet is working!']] })
-        }
-      );
-      const writeData = await writeRes.json();
-      results.write_test = writeRes.ok ? 'SUCCESS ✅' : 'FAILED ❌ ' + JSON.stringify(writeData.error);
-
-    } else {
-      results.sheet_via_drive = 'FAILED ❌ code=' + driveCreateData.error?.code + ' msg=' + driveCreateData.error?.message;
+    if (!createData.id) {
+      results.create = 'FAILED ❌ ' + JSON.stringify(createData.error);
+      return new Response(JSON.stringify(results, null, 2), { headers: { 'Content-Type': 'application/json' } });
     }
+    results.create = 'SUCCESS ✅ id=' + createData.id;
+    const fileId = createData.id;
+
+    // ── Step 2: Move into YOUR shared folder ──
+    const moveRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?addParents=${folderId}&removeParents=root&fields=id,parents`,
+      {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      }
+    );
+    const moveData = await moveRes.json();
+    results.move_to_your_folder = moveRes.ok
+      ? 'SUCCESS ✅ parents=' + JSON.stringify(moveData.parents)
+      : 'FAILED ❌ ' + JSON.stringify(moveData.error);
+
+    // ── Step 3: Write data to sheet ──
+    const writeRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/A1?valueInputOption=RAW`,
+      {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values: [['✅ Jimikki Sheet Working!', 'Hello from service account']] })
+      }
+    );
+    const writeData = await writeRes.json();
+    results.write = writeRes.ok ? 'SUCCESS ✅' : 'FAILED ❌ ' + JSON.stringify(writeData.error);
+
+    results.sheet_url = 'https://docs.google.com/spreadsheets/d/' + fileId;
 
   } catch (e) {
     results.exception = e.message;
