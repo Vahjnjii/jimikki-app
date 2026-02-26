@@ -19,13 +19,12 @@ input[type=date]{color-scheme:light}
 const {useState,useEffect,useRef}=React;
 const r=React.createElement;
 
-/* ── constants ── */
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const fmt=n=>`₹${(+n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 const fmtS=n=>{const v=+n||0;if(v>=100000)return`₹${(v/100000).toFixed(1)}L`;if(v>=1000)return`₹${(v/1000).toFixed(1)}K`;return`₹${v.toFixed(0)}`;};
 const todayStr=()=>new Date().toISOString().slice(0,10);
 const PALETTE=['#6366F1','#F43F5E','#F97316','#22C55E','#06B6D4','#A855F7','#FBBF24','#EC4899'];
-const OE='__exp_other__', OI='__inc_other__';
+const OE='__exp_other__',OI='__inc_other__';
 const C={bg:'#F4F6FB',card:'#FFF',border:'#E8ECF4',text:'#1A1D2E',sub:'#64748B',muted:'#A0AEC0',
   accent:'#4F46E5',green:'#10B981',red:'#F43F5E',blue:'#3B82F6',
   accentBg:'#EEF2FF',greenBg:'#ECFDF5',redBg:'#FFF1F2'};
@@ -48,7 +47,6 @@ const DEF_INC=[
   {id:OI,name:'Other',color:'#94A3B8',deleted:false,fixed:true},
 ];
 
-/* ── filter helpers ── */
 function applyFilter(txns,f){
   if(!f||f.type==='all')return txns;
   const now=new Date();
@@ -76,16 +74,12 @@ function filterLabel(f){
   return'—';
 }
 
-/* ── data builders ── */
 function buildBalanceData(txns,holders,fH,gran){
   const actH=holders.filter(h=>!h.deleted);
   const curBal=fH?actH.filter(h=>h.id===fH).reduce((s,h)=>s+h.balance,0):actH.reduce((s,h)=>s+h.balance,0);
   const base=txns.filter(t=>t.type!=='swap'&&(!fH||t.holderId===fH));
   const now=new Date();
-  function balAt(ds){
-    const after=base.filter(t=>t.date>ds);
-    return Math.max(0,curBal-after.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0)+after.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0));
-  }
+  function balAt(ds){const after=base.filter(t=>t.date>ds);return Math.max(0,curBal-after.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0)+after.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0));}
   if(gran==='week')return Array.from({length:7},(_,i)=>{const d=new Date(now);d.setDate(d.getDate()-(6-i));const k=d.toISOString().slice(0,10);return{name:d.toLocaleDateString('en',{weekday:'short'}),Value:balAt(k),date:k,gran:'week'};});
   if(gran==='month')return Array.from({length:12},(_,i)=>{const mo=new Date(now.getFullYear(),now.getMonth()-11+i,1);const last=new Date(mo.getFullYear(),mo.getMonth()+1,0);const k=last.toISOString().slice(0,10);return{name:mo.toLocaleDateString('en',{month:'short'}),Value:balAt(k),date:k,gran:'month'};});
   if(gran==='year'){const yr=now.getFullYear();return Array.from({length:12},(_,i)=>{const last=new Date(yr,i+1,0);const k=last.toISOString().slice(0,10);return{name:last.toLocaleDateString('en',{month:'short'}),Value:balAt(k),date:k,gran:'year'};});}
@@ -110,6 +104,57 @@ function makeExploreFilter(pt){
   return{type:'all'};
 }
 
+/* ── Google Logo SVG ── */
+function GoogleLogo(){
+  return r('svg',{width:20,height:20,viewBox:'0 0 48 48'},
+    r('path',{fill:'#EA4335',d:'M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z'}),
+    r('path',{fill:'#4285F4',d:'M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z'}),
+    r('path',{fill:'#FBBC05',d:'M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z'}),
+    r('path',{fill:'#34A853',d:'M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z'})
+  );
+}
+
+/* ── Login Screen ── */
+function LoginScreen(){
+  return r('div',{style:{minHeight:'100vh',background:'linear-gradient(135deg,#312E81 0%,#4338CA 40%,#6366F1 100%)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'1.5rem',position:'relative',overflow:'hidden'}},
+    r('div',{style:{position:'absolute',top:'-80px',right:'-60px',width:'300px',height:'300px',borderRadius:'50%',background:'rgba(255,255,255,0.05)'}}),
+    r('div',{style:{position:'absolute',bottom:'-100px',left:'-40px',width:'250px',height:'250px',borderRadius:'50%',background:'rgba(255,255,255,0.04)'}}),
+    r('div',{style:{position:'relative',width:'100%',maxWidth:'360px'}},
+      r('div',{style:{textAlign:'center',marginBottom:'2rem'}},
+        r('div',{style:{fontFamily:'cursive',fontSize:'3.5rem',color:'white',letterSpacing:'-1px',marginBottom:'0.35rem'}},'Jimikki'),
+        r('div',{style:{fontSize:'0.85rem',color:'rgba(255,255,255,0.65)',letterSpacing:'0.02em'}},'Your personal finance tracker')
+      ),
+      r('div',{style:{background:'white',borderRadius:'28px',padding:'2rem',boxShadow:'0 24px 64px rgba(0,0,0,0.35)'}},
+        r('div',{style:{marginBottom:'1.5rem'}},
+          r('div',{style:{fontWeight:800,fontSize:'1.1rem',color:C.text,marginBottom:'0.3rem'}},'Welcome back 👋'),
+          r('div',{style:{fontSize:'0.78rem',color:C.sub}})
+        ),
+        r('a',{href:'/api/auth/login',style:{display:'flex',alignItems:'center',justifyContent:'center',gap:'12px',padding:'0.9rem 1.25rem',borderRadius:'14px',border:'1.5px solid #E8ECF4',background:'white',color:C.text,textDecoration:'none',fontWeight:700,fontSize:'0.88rem',boxShadow:'0 2px 12px rgba(0,0,0,0.07)',cursor:'pointer',transition:'box-shadow 0.2s'}},
+          r(GoogleLogo),
+          'Continue with Google'
+        ),
+        r('div',{style:{display:'flex',alignItems:'center',gap:'10px',margin:'1.25rem 0'}},
+          r('div',{style:{flex:1,height:'1px',background:C.border}}),
+          r('div',{style:{fontSize:'0.65rem',color:C.muted,whiteSpace:'nowrap'}},'SECURE · PRIVATE · FREE'),
+          r('div',{style:{flex:1,height:'1px',background:C.border}})
+        ),
+        r('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'0.5rem'}},
+          ...[['🔒','Private','Only you see your data'],['☁️','Synced','Access anywhere'],['📊','Analytics','Track your wealth']].map(([icon,title,desc])=>
+            r('div',{key:title,style:{textAlign:'center',padding:'0.75rem 0.4rem',background:C.bg,borderRadius:'12px'}},
+              r('div',{style:{fontSize:'1.2rem',marginBottom:'4px'}},icon),
+              r('div',{style:{fontSize:'0.65rem',fontWeight:700,color:C.text,marginBottom:'2px'}},title),
+              r('div',{style:{fontSize:'0.55rem',color:C.muted,lineHeight:1.4}},desc)
+            )
+          )
+        )
+      ),
+      r('div',{style:{textAlign:'center',marginTop:'1.25rem',fontSize:'0.62rem',color:'rgba(255,255,255,0.4)'}},
+        'By signing in you agree to keep your finances in check 💸'
+      )
+    )
+  );
+}
+
 /* ══════════ CHARTS ══════════ */
 function BalanceAreaChart({data,height=200,onExplore}){
   const [tip,setTip]=useState(null);
@@ -118,11 +163,11 @@ function BalanceAreaChart({data,height=200,onExplore}){
   const vals=data.map(d=>d.Value);
   const max=Math.max(...vals,1),min=Math.min(...vals,0),range=max-min||1;
   const W=460,H=height,pL=52,pB=24,pT=16,pR=8,cw=W-pL-pR,ch=H-pB-pT,n=data.length;
-  const xOf=i=>pL+(i/(n-1||1))*cw, yOf=v=>pT+ch-((v-min)/range)*ch;
+  const xOf=i=>pL+(i/(n-1||1))*cw,yOf=v=>pT+ch-((v-min)/range)*ch;
   const pts=data.map((d,i)=>[xOf(i),yOf(d.Value)]);
   function smoothPath(){if(pts.length<2)return`M${pts[0]}`;let d=`M${pts[0][0]},${pts[0][1]}`;for(let i=0;i<pts.length-1;i++){const mx=(pts[i][0]+pts[i+1][0])/2;d+=` C${mx},${pts[i][1]} ${mx},${pts[i+1][1]} ${pts[i+1][0]},${pts[i+1][1]}`;}return d;}
-  const lp=smoothPath(), ap=`${lp} L${pts[n-1][0]},${H-pB} L${pts[0][0]},${H-pB} Z`;
-  const up=vals[vals.length-1]>=vals[0], lc=up?C.accent:C.red, gid='g'+Math.random().toString(36).slice(2,5);
+  const lp=smoothPath(),ap=`${lp} L${pts[n-1][0]},${H-pB} L${pts[0][0]},${H-pB} Z`;
+  const up=vals[vals.length-1]>=vals[0],lc=up?C.accent:C.red,gid='g'+Math.random().toString(36).slice(2,5);
   function handleDot(ev,d,i){ev.stopPropagation();const rc=svgRef.current.getBoundingClientRect();setTip({x:rc.left+(xOf(i)/W)*rc.width,y:rc.top+(yOf(d.Value)/H)*rc.height,d});}
   return r('div',{style:{position:'relative',userSelect:'none'}},
     tip&&r('div',{style:{position:'fixed',inset:0,zIndex:90},onClick:()=>setTip(null)}),
@@ -131,17 +176,12 @@ function BalanceAreaChart({data,height=200,onExplore}){
       ...Array.from({length:5},(_,i)=>{const v=min+(range/4)*i,y=yOf(v);return r('g',{key:i},r('line',{x1:pL,y1:y,x2:W-pR,y2:y,stroke:C.border,strokeDasharray:'3 3'}),r('text',{x:pL-4,y:y+3,textAnchor:'end',fontSize:9,fill:C.muted},fmtS(v)));}),
       r('path',{d:ap,fill:`url(#${gid})`}),
       r('path',{d:lp,fill:'none',stroke:lc,strokeWidth:2.5,strokeLinecap:'round',strokeLinejoin:'round'}),
-      ...data.map((d,i)=>r('g',{key:i},
-        r('circle',{cx:xOf(i),cy:yOf(d.Value),r:tip&&tip.d===d?6:4,fill:'white',stroke:lc,strokeWidth:2.5,style:{cursor:'pointer'},onClick:ev=>handleDot(ev,d,i)}),
-        r('text',{x:xOf(i),y:H-6,textAnchor:'middle',fontSize:9,fill:C.muted},d.name)
-      ))
+      ...data.map((d,i)=>r('g',{key:i},r('circle',{cx:xOf(i),cy:yOf(d.Value),r:tip&&tip.d===d?6:4,fill:'white',stroke:lc,strokeWidth:2.5,style:{cursor:'pointer'},onClick:ev=>handleDot(ev,d,i)}),r('text',{x:xOf(i),y:H-6,textAnchor:'middle',fontSize:9,fill:C.muted},d.name)))
     ),
     tip&&r('div',{style:{position:'fixed',left:tip.x,top:tip.y,transform:'translate(-50%,-115%)',background:'white',border:`1px solid ${C.border}`,borderRadius:'16px',padding:'12px 14px',boxShadow:'0 6px 28px rgba(0,0,0,0.14)',zIndex:999,minWidth:'180px'},onClick:e=>e.stopPropagation()},
       r('div',{style:{fontSize:'0.65rem',fontWeight:700,color:C.muted,letterSpacing:'0.08em',marginBottom:'4px'}},'BALANCE · '+tip.d.name),
       r('div',{style:{fontSize:'1.15rem',fontWeight:800,color:C.accent,marginBottom:'10px'}},fmt(tip.d.Value)),
-      r('button',{onClick:()=>{onExplore(makeExploreFilter(tip.d));setTip(null);},style:{width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',padding:'7px 10px',borderRadius:'10px',border:`1.5px solid ${C.accent}`,background:C.accentBg,color:C.accent,cursor:'pointer',fontWeight:700,fontSize:'0.75rem'}},
-        '✦ Explore in Analytics'
-      )
+      r('button',{onClick:()=>{onExplore(makeExploreFilter(tip.d));setTip(null);},style:{width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',padding:'7px 10px',borderRadius:'10px',border:`1.5px solid ${C.accent}`,background:C.accentBg,color:C.accent,cursor:'pointer',fontWeight:700,fontSize:'0.75rem'}},'✦ Explore in Analytics')
     )
   );
 }
@@ -153,15 +193,12 @@ function NetBarChart({data,height=190}){
   const max=Math.max(...data.map(d=>d.Value),1);
   const W=460,H=height,pL=44,pB=24,pT=10,pR=8,cw=W-pL-pR,ch=H-pB-pT;
   const bw=Math.min(28,cw/data.length*0.5),gap=cw/data.length;
-  const xOf=i=>pL+gap*i+gap/2, yOf=v=>pT+ch-Math.max(0,(v/max)*ch);
+  const xOf=i=>pL+gap*i+gap/2,yOf=v=>pT+ch-Math.max(0,(v/max)*ch);
   function showTip(ev,d,i){const rc=svgRef.current.getBoundingClientRect();setTip({x:rc.left+(xOf(i)/W)*rc.width,y:rc.top+(yOf(d.Value)/H)*rc.height,d});}
   return r('div',{style:{position:'relative',userSelect:'none'}},
     r('svg',{ref:svgRef,viewBox:`0 0 ${W} ${H}`,style:{width:'100%',height},onClick:()=>setTip(null)},
       ...Array.from({length:5},(_,i)=>{const v=(max/4)*i,y=yOf(v);return r('g',{key:i},r('line',{x1:pL,y1:y,x2:W-pR,y2:y,stroke:C.border,strokeDasharray:'3 3'}),r('text',{x:pL-4,y:y+3,textAnchor:'end',fontSize:9,fill:C.muted},fmtS(v)));}),
-      ...data.map((d,i)=>r('g',{key:i,style:{cursor:'pointer'},onClick:ev=>{ev.stopPropagation();showTip(ev,d,i);}},
-        r('rect',{x:xOf(i)-bw/2,y:yOf(d.Value),width:bw,height:Math.max(2,(d.Value/max)*ch),fill:tip&&tip.d===d?C.accent:'#818CF8',rx:4,opacity:tip&&tip.d===d?1:0.85}),
-        r('text',{x:xOf(i),y:H-6,textAnchor:'middle',fontSize:9,fill:C.muted},d.name)
-      ))
+      ...data.map((d,i)=>r('g',{key:i,style:{cursor:'pointer'},onClick:ev=>{ev.stopPropagation();showTip(ev,d,i);}},r('rect',{x:xOf(i)-bw/2,y:yOf(d.Value),width:bw,height:Math.max(2,(d.Value/max)*ch),fill:tip&&tip.d===d?C.accent:'#818CF8',rx:4,opacity:tip&&tip.d===d?1:0.85}),r('text',{x:xOf(i),y:H-6,textAnchor:'middle',fontSize:9,fill:C.muted},d.name)))
     ),
     tip&&r('div',{style:{position:'fixed',left:tip.x,top:tip.y,transform:'translate(-50%,-110%)',background:'white',border:`1px solid ${C.border}`,borderRadius:'14px',padding:'10px 14px',boxShadow:'0 4px 24px rgba(0,0,0,0.12)',zIndex:999,whiteSpace:'nowrap'},onClick:e=>e.stopPropagation()},
       r('div',{style:{fontWeight:700,color:C.sub,fontSize:'0.68rem',marginBottom:'6px'}},tip.d.name),
@@ -183,10 +220,7 @@ function DonutChart({data}){
   const slices=data.map(d=>{const sa=angle,sw=(d.total/total)*2*Math.PI;angle+=sw;const ea=angle;const x1=cx+R*Math.cos(sa),y1=cy+R*Math.sin(sa),x2=cx+R*Math.cos(ea),y2=cy+R*Math.sin(ea),ix1=cx+ri*Math.cos(sa),iy1=cy+ri*Math.sin(sa),ix2=cx+ri*Math.cos(ea),iy2=cy+ri*Math.sin(ea),lg=sw>Math.PI?1:0;return{...d,path:`M${ix1},${iy1}L${x1},${y1}A${R},${R} 0 ${lg} 1 ${x2},${y2}L${ix2},${iy2}A${ri},${ri} 0 ${lg} 0 ${ix1},${iy1}Z`};});
   return r('div',{style:{position:'relative',display:'flex',justifyContent:'center'}},
     r('svg',{viewBox:'0 0 180 180',style:{width:180,height:180},onMouseLeave:()=>setTip(null)},
-      ...slices.map((s,i)=>r('path',{key:i,d:s.path,fill:s.color,stroke:'white',strokeWidth:2.5,style:{cursor:'pointer',opacity:tip&&tip.id!==s.id?.55:1},
-        onMouseEnter:ev=>setTip({id:s.id,x:ev.clientX,y:ev.clientY,name:s.name,total:s.total,pct:((s.total/total)*100).toFixed(1)}),
-        onTouchStart:ev=>setTip({id:s.id,x:ev.touches[0].clientX,y:ev.touches[0].clientY,name:s.name,total:s.total,pct:((s.total/total)*100).toFixed(1)})
-      })),
+      ...slices.map((s,i)=>r('path',{key:i,d:s.path,fill:s.color,stroke:'white',strokeWidth:2.5,style:{cursor:'pointer',opacity:tip&&tip.id!==s.id?.55:1},onMouseEnter:ev=>setTip({id:s.id,x:ev.clientX,y:ev.clientY,name:s.name,total:s.total,pct:((s.total/total)*100).toFixed(1)}),onTouchStart:ev=>setTip({id:s.id,x:ev.touches[0].clientX,y:ev.touches[0].clientY,name:s.name,total:s.total,pct:((s.total/total)*100).toFixed(1)})})),
       r('text',{x:cx,y:cy-6,textAnchor:'middle',fontSize:11,fill:C.muted,fontWeight:600},'Total'),
       r('text',{x:cx,y:cy+10,textAnchor:'middle',fontSize:12,fill:C.text,fontWeight:800},fmtS(total))
     ),
@@ -198,7 +232,6 @@ function DonutChart({data}){
   );
 }
 
-/* ── Bucket legend row ── */
 function BucketRow({b,total,grand}){
   const pct=grand>0?((total/grand)*100).toFixed(1):0;
   return r('div',{style:{marginBottom:'0.7rem'}},
@@ -210,7 +243,6 @@ function BucketRow({b,total,grand}){
   );
 }
 
-/* ══════════ MODALS / PANELS ══════════ */
 function DeleteConfirmModal({txn,bName,ibName,hName,onConfirm,onCancel}){
   const col=txn.type==='income'?C.green:txn.type==='swap'?C.blue:C.red;
   const lbl=txn.type==='income'?'Income':txn.type==='swap'?'Transfer':'Spending';
@@ -220,10 +252,7 @@ function DeleteConfirmModal({txn,bName,ibName,hName,onConfirm,onCancel}){
     r('div',{style:{position:'relative',background:'white',borderRadius:'24px',padding:'1.75rem 1.5rem',width:'100%',maxWidth:'360px',boxShadow:'0 12px 48px rgba(0,0,0,0.22)',textAlign:'center'}},
       r('div',{style:{width:'56px',height:'56px',borderRadius:'50%',background:C.redBg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.6rem',margin:'0 auto 1rem'}},'🗑️'),
       r('div',{style:{fontWeight:800,fontSize:'1rem',color:C.text,marginBottom:'0.4rem'}},'Delete Transaction?'),
-      r('div',{style:{fontSize:'0.78rem',color:C.sub,marginBottom:'1rem',lineHeight:1.6}},
-        'This will reverse the ',r('span',{style:{color:col,fontWeight:700}},lbl.toLowerCase()),
-        ' of ',r('span',{style:{fontWeight:700,color:C.text}},fmt(txn.amount)),` (${desc}) and move it to Recycle Bin.`
-      ),
+      r('div',{style:{fontSize:'0.78rem',color:C.sub,marginBottom:'1rem',lineHeight:1.6}},'This will reverse the ',r('span',{style:{color:col,fontWeight:700}},lbl.toLowerCase()),' of ',r('span',{style:{fontWeight:700,color:C.text}},fmt(txn.amount)),` (${desc}) and move it to Recycle Bin.`),
       r('div',{style:{background:C.bg,borderRadius:'12px',padding:'0.65rem',fontSize:'0.72rem',color:C.muted,marginBottom:'1.25rem'}},'💡 Restore anytime from Recycle Bin in Analytics → Transactions'),
       r('div',{style:{display:'flex',gap:'0.65rem'}},
         r('button',{onClick:onCancel,style:{flex:1,padding:'0.75rem',borderRadius:'12px',border:`1.5px solid ${C.border}`,background:'white',color:C.sub,cursor:'pointer',fontWeight:700}},'Cancel'),
@@ -258,7 +287,6 @@ function HomeFilterPanel({filter,onChange,onClose}){
   );
 }
 
-/* ── Analytics Filter Modal ── */
 function AnalyticsFilterModal({timeFilter,holderFilter,bucketFilter,holders,actExpB,actIncB,onApply,onClose}){
   const now=new Date();
   const [type,setType]=useState(timeFilter.type||'month');
@@ -271,8 +299,8 @@ function AnalyticsFilterModal({timeFilter,holderFilter,bucketFilter,holders,actE
   function apply(){onApply(type==='custom'?{type,from,to}:type==='yearmonth'?{type,ym}:{type},hF,bF);onClose();}
   function clear(){setType('month');setHF(null);setBF(null);}
   const tpill=(t,l)=>r('button',{key:t,onClick:()=>setType(t),style:{padding:'5px 12px',borderRadius:'999px',border:`1px solid ${type===t?C.accent:C.border}`,background:type===t?C.accent:'white',color:type===t?'white':C.sub,cursor:'pointer',fontSize:'0.7rem',fontWeight:700}},l);
-  const hchip=(h)=>{const a=hF===h.id;return r('button',{key:h.id,onClick:()=>setHF(a?null:h.id),style:{padding:'4px 12px',borderRadius:'999px',border:`1px solid ${a?C.accent:C.border}`,background:a?C.accentBg:'white',color:a?C.accent:C.sub,cursor:'pointer',fontSize:'0.71rem',fontWeight:a?700:400}},h.name);};
-  const bchip=(b)=>{const a=bF===b.id;return r('button',{key:b.id,onClick:()=>setBF(a?null:b.id),style:{display:'flex',alignItems:'center',gap:'5px',padding:'4px 12px',borderRadius:'999px',border:`1px solid ${a?C.accent:C.border}`,background:a?C.accentBg:'white',color:a?C.accent:C.sub,cursor:'pointer',fontSize:'0.71rem',fontWeight:a?700:400}},r('span',{style:{width:'7px',height:'7px',borderRadius:'50%',background:b.color,display:'inline-block'}}),b.name);};
+  const hchip=h=>{const a=hF===h.id;return r('button',{key:h.id,onClick:()=>setHF(a?null:h.id),style:{padding:'4px 12px',borderRadius:'999px',border:`1px solid ${a?C.accent:C.border}`,background:a?C.accentBg:'white',color:a?C.accent:C.sub,cursor:'pointer',fontSize:'0.71rem',fontWeight:a?700:400}},h.name);};
+  const bchip=b=>{const a=bF===b.id;return r('button',{key:b.id,onClick:()=>setBF(a?null:b.id),style:{display:'flex',alignItems:'center',gap:'5px',padding:'4px 12px',borderRadius:'999px',border:`1px solid ${a?C.accent:C.border}`,background:a?C.accentBg:'white',color:a?C.accent:C.sub,cursor:'pointer',fontSize:'0.71rem',fontWeight:a?700:400}},r('span',{style:{width:'7px',height:'7px',borderRadius:'50%',background:b.color,display:'inline-block'}}),b.name);};
   const sec=(label,children)=>r('div',{style:{marginBottom:'1rem'}},r('div',{style:{fontSize:'0.6rem',fontWeight:700,color:C.muted,letterSpacing:'0.1em',marginBottom:'0.45rem'}},label),children);
   return r('div',{style:{position:'fixed',inset:0,zIndex:500,display:'flex',alignItems:'flex-end',justifyContent:'center'}},
     r('div',{style:{position:'absolute',inset:0,background:'rgba(0,0,0,0.42)',backdropFilter:'blur(4px)'},onClick:onClose}),
@@ -280,7 +308,7 @@ function AnalyticsFilterModal({timeFilter,holderFilter,bucketFilter,holders,actE
       r('div',{style:{width:'36px',height:'4px',borderRadius:'2px',background:C.border,margin:'0 auto 1.1rem'}}),
       r('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1.1rem'}},
         r('div',{style:{fontWeight:800,fontSize:'1rem',color:C.text}},'⚙️ Analytics Filter'),
-        r('button',{onClick:clear,style:{fontSize:'0.72rem',color:C.accent,background:'none',border:'none',cursor:'pointer',fontWeight:700,padding:'4px 8px',borderRadius:'8px',background:C.accentBg}},'Clear All')
+        r('button',{onClick:clear,style:{fontSize:'0.72rem',color:C.accent,background:C.accentBg,border:'none',cursor:'pointer',fontWeight:700,padding:'4px 8px',borderRadius:'8px'}},'Clear All')
       ),
       sec('TIME PERIOD',r('div',null,
         r('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}},tpill('all','All Time'),tpill('week','This Week'),tpill('month','This Month'),tpill('quarter','Last 3 Mo'),tpill('year','This Year'),tpill('yearmonth','Specific Month'),tpill('custom','Custom Range')),
@@ -295,7 +323,7 @@ function AnalyticsFilterModal({timeFilter,holderFilter,bucketFilter,holders,actE
         ...holders.filter(h=>!h.deleted).map(hchip)
       )),
       sec('INCOME SOURCE',r('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}},
-        r('button',{onClick:()=>setBF(null),style:{padding:'4px 12px',borderRadius:'999px',border:`1px solid ${!bF||actExpB.some(b=>b.id===bF)?C.border:C.border}`,background:'white',color:C.muted,cursor:'pointer',fontSize:'0.71rem'}},!bF?'● All':' All'),
+        r('button',{onClick:()=>setBF(null),style:{padding:'4px 12px',borderRadius:'999px',border:`1px solid ${C.border}`,background:'white',color:C.muted,cursor:'pointer',fontSize:'0.71rem'}},!bF?'● All':' All'),
         ...actIncB.map(bchip)
       )),
       sec('EXPENSE CATEGORY',r('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}},...actExpB.map(bchip))),
@@ -304,16 +332,12 @@ function AnalyticsFilterModal({timeFilter,holderFilter,bucketFilter,holders,actE
   );
 }
 
-/* ── atoms ── */
 function Card({children,style={}}){return r('div',{style:{background:C.card,borderRadius:'20px',padding:'1.25rem',boxShadow:'0 2px 12px rgba(0,0,0,0.05)',border:`1px solid ${C.border}`,...style}},children);}
 function SL({children,req}){return r('div',{style:{fontSize:'0.62rem',fontWeight:700,color:C.muted,letterSpacing:'0.09em',marginBottom:'5px',display:'flex',gap:'3px'}},children,req&&r('span',{style:{color:C.red}},'*'));}
 function FI({style={},...p}){return r('input',{...p,style:{width:'100%',background:C.bg,border:`1.5px solid ${C.border}`,borderRadius:'12px',padding:'0.6rem 0.85rem',color:C.text,fontSize:'0.9rem',outline:'none',boxSizing:'border-box',...style}});}
 function FS({children,style={},...p}){return r('select',{...p,style:{width:'100%',background:C.bg,border:`1.5px solid ${C.border}`,borderRadius:'12px',padding:'0.6rem 0.85rem',color:C.text,fontSize:'0.88rem',outline:'none',boxSizing:'border-box',...style}},children);}
 function GranPills({value,onChange}){return r('div',{style:{display:'flex',gap:'4px',flexWrap:'wrap'}},...[['week','Weekly'],['month','Monthly'],['year','Yearly'],['5year','5Y']].map(([v,l])=>r('button',{key:v,onClick:()=>onChange(v),style:{padding:'4px 10px',borderRadius:'999px',border:`1px solid ${value===v?C.accent:C.border}`,background:value===v?C.accent:'white',color:value===v?'white':C.sub,cursor:'pointer',fontSize:'0.68rem',fontWeight:700}},l)));}
 
-/* ════════════════════════════════
-   MAIN APP
-════════════════════════════════ */
 function Jimikki(){
   const [view,setView]=useState('home');
   const [sidebar,setSidebar]=useState(false);
@@ -322,11 +346,11 @@ function Jimikki(){
   const [expBuckets,setExpBuckets]=useState(DEF_EXP);
   const [incBuckets,setIncBuckets]=useState(DEF_INC);
   const [loaded,setLoaded]=useState(false);
+  const [loggedIn,setLoggedIn]=useState(null);
   const [userEmail,setUserEmail]=useState('');
   const [toast,setToast]=useState('');
   const [pendingDelId,setPendingDelId]=useState(null);
 
-  // FAB state
   const [fabOpen,setFabOpen]=useState(false);
   const [fabMode,setFabMode]=useState(null);
   const [jAmt,setJAmt]=useState('');
@@ -337,20 +361,17 @@ function Jimikki(){
   const [jTo,setJTo]=useState('');
   const [jDate,setJDate]=useState(todayStr());
 
-  // Home
   const [hFilter,setHFilter]=useState({type:'month'});
   const [hFilterOpen,setHFilterOpen]=useState(false);
   const [hGran,setHGran]=useState('month');
   const [hHFilter,setHHFilter]=useState(null);
 
-  // Analytics
   const [aFilter,setAFilter]=useState({type:'month'});
   const [aHFilter,setAHFilter]=useState(null);
   const [aBFilter,setABFilter]=useState(null);
   const [aFilterOpen,setAFilterOpen]=useState(false);
   const [aView,setAView]=useState('flow');
 
-  // Sidebar forms
   const [nhName,setNhName]=useState('');const [nhBal,setNhBal]=useState('');
   const [nbExpName,setNbExpName]=useState('');const [nbExpColor,setNbExpColor]=useState(PALETTE[0]);
   const [nbIncName,setNbIncName]=useState('');const [nbIncColor,setNbIncColor]=useState(PALETTE[3]);
@@ -371,21 +392,28 @@ function Jimikki(){
 
   useEffect(()=>{
     fetch('/api/data')
-      .then(r=>{if(!r.ok)throw new Error();return r.json();})
+      .then(r=>{
+        if(r.status===401){setLoggedIn(false);setLoaded(true);return null;}
+        if(!r.ok)throw new Error();
+        return r.json();
+      })
       .then(d=>{
+        if(!d)return;
         setHolders(d.holders||[]);
         setTxns(d.transactions||[]);
         setExpBuckets(d.expBuckets||DEF_EXP);
         setIncBuckets(d.incBuckets||DEF_INC);
         if(d.email)setUserEmail(d.email);
+        setLoggedIn(true);
+        setLoaded(true);
       })
-      .catch(()=>{})
-      .finally(()=>setLoaded(true));
+      .catch(()=>{setLoggedIn(false);setLoaded(true);});
   },[]);
+
   useEffect(()=>{
-    if(!loaded)return;
+    if(!loaded||!loggedIn)return;
     fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({holders,transactions:txns,expBuckets,incBuckets})}).catch(()=>{});
-  },[holders,txns,expBuckets,incBuckets,loaded]);
+  },[holders,txns,expBuckets,incBuckets,loaded,loggedIn]);
 
   const pop=msg=>{setToast(msg);setTimeout(()=>setToast(''),2800);};
 
@@ -415,7 +443,7 @@ function Jimikki(){
       if(jIncB===OI&&amt>=1000&&!jNote.trim())return pop('Note required for "Other" when ≥ ₹1,000');
       setTxns(ts=>[{id:uid(),type:'income',amount:amt,note:jNote.trim(),incBucketId:jIncB,holderId:jFrom,date:jDate,deleted:false},...ts]);
       setHolders(hs=>hs.map(x=>x.id===jFrom?{...x,balance:x.balance+amt}:x));
-    } else {
+    }else{
       if(!jExpB)return pop('Select a spending category');
       if(jExpB===OE&&amt>=1000&&!jNote.trim())return pop('Note required for "Other" when ≥ ₹1,000');
       if(from.balance<amt)return pop('Insufficient balance');
@@ -449,17 +477,7 @@ function Jimikki(){
   }
 
   function addHolder(){if(!nhName.trim())return pop('Enter a name');const bal=Math.max(0,parseFloat(nhBal)||0);setHolders(hs=>[...hs,{id:uid(),name:nhName.trim(),balance:bal,isPrimary:hs.filter(x=>!x.deleted).length===0,deleted:false}]);setNhName('');setNhBal('');pop('Holder added ✓');}
-
-  /* ── Updated delete logic: zero balance → archive directly; non-zero → block ── */
-  function tryDelHolder(id){
-    const h=holders.find(x=>x.id===id);
-    if(!h)return;
-    if(h.isPrimary)return pop("Can't remove the primary holder");
-    if(h.balance>0)return pop(`"${h.name}" has ${fmt(h.balance)} — clear balance first`);
-    setHolders(hs=>hs.filter(x=>x.id!==id));
-    pop(`"${h.name}" deleted ✓`);
-  }
-
+  function tryDelHolder(id){const h=holders.find(x=>x.id===id);if(!h)return;if(h.isPrimary)return pop("Can't remove the primary holder");if(h.balance>0)return pop(`"${h.name}" has ${fmt(h.balance)} — clear balance first`);setHolders(hs=>hs.filter(x=>x.id!==id));pop(`"${h.name}" deleted ✓`);}
   function restHolder(id){setHolders(hs=>hs.map(x=>x.id===id?{...x,deleted:false}:x));pop('Restored ✓');}
   function setPrimary(id){setHolders(hs=>hs.map(x=>({...x,isPrimary:x.id===id})));pop('Primary set');}
 
@@ -471,38 +489,20 @@ function Jimikki(){
   function handleExplore(filter){setAFilter(filter);setAHFilter(null);setABFilter(null);setAView('txns');setView('analytics');}
   function handleAFilter(tf,hf,bf){setAFilter(tf);setAHFilter(hf);setABFilter(bf);}
 
-  /* ── computed for home ── */
   const hFilteredT=applyFilter(actT.filter(t=>t.type!=='swap'&&(!hHFilter||t.holderId===hHFilter)),hFilter);
   const hStats=getStats(hFilteredT);
   const hBalData=buildBalanceData(actT,holders,hHFilter,hGran);
 
-  /* ── computed for analytics ── */
-  const aFilteredT=applyFilter(
-    actT.filter(t=>{
-      const hMatch=!aHFilter||t.holderId===aHFilter||(t.type==='swap'&&t.toHolderId===aHFilter);
-      const bMatch=!aBFilter||t.bucketId===aBFilter||t.incBucketId===aBFilter;
-      return hMatch&&bMatch;
-    }),
-    aFilter
-  );
+  const aFilteredT=applyFilter(actT.filter(t=>{const hMatch=!aHFilter||t.holderId===aHFilter||(t.type==='swap'&&t.toHolderId===aHFilter);const bMatch=!aBFilter||t.bucketId===aBFilter||t.incBucketId===aBFilter;return hMatch&&bMatch;}),aFilter);
   const aStats=getStats(aFilteredT.filter(t=>t.type!=='swap'));
-
-  const incStats=actIncB
-    .map(b=>({...b,total:aFilteredT.filter(t=>t.type==='income'&&t.incBucketId===b.id).reduce((s,t)=>s+t.amount,0)}))
-    .filter(b=>b.total>0).sort((a,b)=>b.total-a.total);
+  const incStats=actIncB.map(b=>({...b,total:aFilteredT.filter(t=>t.type==='income'&&t.incBucketId===b.id).reduce((s,t)=>s+t.amount,0)})).filter(b=>b.total>0).sort((a,b)=>b.total-a.total);
   const incTotal=incStats.reduce((s,b)=>s+b.total,0);
-
-  const expStats=actExpB
-    .map(b=>({...b,total:aFilteredT.filter(t=>t.type==='spending'&&t.bucketId===b.id).reduce((s,t)=>s+t.amount,0)}))
-    .filter(b=>b.total>0).sort((a,b)=>b.total-a.total);
+  const expStats=actExpB.map(b=>({...b,total:aFilteredT.filter(t=>t.type==='spending'&&t.bucketId===b.id).reduce((s,t)=>s+t.amount,0)})).filter(b=>b.total>0).sort((a,b)=>b.total-a.total);
   const expTotal=expStats.reduce((s,b)=>s+b.total,0);
-
   const aBadge=()=>{const p=[filterLabel(aFilter)];if(aHFilter){const h=holders.find(x=>x.id===aHFilter);if(h)p.push(h.name);}if(aBFilter){const ib=incBuckets.find(x=>x.id===aBFilter),eb=expBuckets.find(x=>x.id===aBFilter);p.push(ib?.name||eb?.name||'');}return p.filter(Boolean).join(' · ');};
   const aActiveCount=(aFilter.type!=='all'?1:0)+(aHFilter?1:0)+(aBFilter?1:0);
-
   const pendingTxn=pendingDelId?txns.find(x=>x.id===pendingDelId):null;
 
-  /* TxnRow */
   function TxnRow({t,onDel,onRest}){
     const col=t.type==='income'?C.green:t.type==='swap'?C.blue:C.red;
     const bg=t.type==='income'?C.greenBg:t.type==='swap'?'#EFF6FF':C.redBg;
@@ -525,7 +525,13 @@ function Jimikki(){
     );
   }
 
-  if(!loaded)return r('div',{style:{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:C.bg}},r('div',{style:{fontFamily:'cursive',fontSize:'2.5rem',color:C.accent}},'Jimikki'),r('div',{style:{fontSize:'0.8rem',color:C.sub}},'Loading…'));
+  /* ── Screens ── */
+  if(!loaded)return r('div',{style:{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#312E81 0%,#4338CA 40%,#6366F1 100%)'}},
+    r('div',{style:{fontFamily:'cursive',fontSize:'2.5rem',color:'white'}},'Jimikki'),
+    r('div',{style:{fontSize:'0.8rem',color:'rgba(255,255,255,0.6)',marginTop:'0.5rem'}},'Loading…')
+  );
+
+  if(loggedIn===false)return r(LoginScreen,null);
 
   return r('div',{style:{minHeight:'100vh',background:C.bg,maxWidth:'480px',margin:'0 auto',fontFamily:'"Inter",system-ui,sans-serif',color:C.text}},
 
@@ -534,7 +540,6 @@ function Jimikki(){
     hFilterOpen&&r(HomeFilterPanel,{filter:hFilter,onChange:setHFilter,onClose:()=>setHFilterOpen(false)}),
     aFilterOpen&&r(AnalyticsFilterModal,{timeFilter:aFilter,holderFilter:aHFilter,bucketFilter:aBFilter,holders,actExpB,actIncB,onApply:handleAFilter,onClose:()=>setAFilterOpen(false)}),
 
-    /* FAB overlay */
     fabOpen&&r('div',{style:{position:'fixed',inset:0,zIndex:300,display:'flex',flexDirection:'column',justifyContent:'flex-end'}},
       r('div',{style:{position:'absolute',inset:0,background:'rgba(15,18,40,0.5)',backdropFilter:'blur(6px)'},onClick:()=>{setFabOpen(false);setFabMode(null);}}),
       r('div',{style:{position:'relative',background:'white',borderRadius:'28px 28px 0 0',padding:'1.25rem 1.25rem 7rem',maxWidth:'480px',width:'100%',margin:'0 auto',boxShadow:'0 -8px 40px rgba(0,0,0,0.12)',maxHeight:'90vh',overflowY:'auto'}},
@@ -559,10 +564,7 @@ function Jimikki(){
               r('div',null,r(SL,null,'AMOUNT'),r(FI,{value:jAmt,onChange:ev=>setJAmt(ev.target.value),type:'number',min:'0',placeholder:'0.00',autoFocus:true,style:{fontSize:'1.35rem',fontWeight:800}})),
               fabMode==='income'&&r('div',null,r(SL,{req:true},'INCOME SOURCE'),r(FS,{value:jIncB,onChange:ev=>setJIncB(ev.target.value)},r('option',{value:''},'— Choose —'),...actIncB.map(b=>r('option',{key:b.id,value:b.id},b.name)))),
               fabMode==='spending'&&r('div',null,r(SL,{req:true},'SPENDING CATEGORY'),r(FS,{value:jExpB,onChange:ev=>setJExpB(ev.target.value)},r('option',{value:''},'— Choose —'),...actExpB.map(b=>r('option',{key:b.id,value:b.id},b.name)))),
-              r('div',null,
-                r(SL,{req:fabMode==='swap'||otherNeedsNote},fabMode==='swap'?'NOTE (required)':otherNeedsNote?'NOTE (required for "Other" ≥ ₹1,000)':'NOTE (optional)'),
-                r(FI,{value:jNote,onChange:ev=>setJNote(ev.target.value),placeholder:fabMode==='swap'?'e.g. Rent payment…':fabMode==='spending'?'e.g. Swiggy, petrol…':'e.g. Salary June…'})
-              ),
+              r('div',null,r(SL,{req:fabMode==='swap'||otherNeedsNote},fabMode==='swap'?'NOTE (required)':otherNeedsNote?'NOTE (required for "Other" ≥ ₹1,000)':'NOTE (optional)'),r(FI,{value:jNote,onChange:ev=>setJNote(ev.target.value),placeholder:fabMode==='swap'?'e.g. Rent payment…':fabMode==='spending'?'e.g. Swiggy, petrol…':'e.g. Salary June…'})),
               r('div',{style:{display:'grid',gridTemplateColumns:fabMode==='swap'?'1fr 1fr':'1fr',gap:'0.6rem'}},
                 r('div',null,r(SL,null,fabMode==='swap'?'FROM':'HOLDER'),r(FS,{value:jFrom,onChange:ev=>setJFrom(ev.target.value)},r('option',{value:''},'Select'),...actH.map(x=>r('option',{key:x.id,value:x.id},`${x.name} (${fmt(x.balance)})`))),),
                 fabMode==='swap'&&r('div',null,r(SL,null,'TO'),r(FS,{value:jTo,onChange:ev=>setJTo(ev.target.value)},r('option',{value:''},'Select'),...actH.filter(x=>x.id!==jFrom).map(x=>r('option',{key:x.id,value:x.id},x.name))))
@@ -574,17 +576,16 @@ function Jimikki(){
       )
     ),
 
-    /* Sidebar */
     sidebar&&r('div',{style:{position:'fixed',inset:0,zIndex:200,display:'flex'}},
       r('div',{style:{position:'absolute',inset:0,background:'rgba(0,0,0,0.3)',backdropFilter:'blur(4px)'},onClick:()=>setSidebar(false)}),
       r('div',{style:{position:'relative',marginLeft:'auto',width:'300px',background:'white',height:'100%',overflowY:'auto',padding:'1.5rem 1.1rem',display:'flex',flexDirection:'column',gap:'0.4rem',boxShadow:'-4px 0 40px rgba(0,0,0,0.12)'}},
         r('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.75rem'}},r('span',{style:{fontFamily:'cursive',fontSize:'1.5rem',color:C.accent}},'Jimikki'),r('button',{onClick:()=>setSidebar(false),style:{background:C.bg,border:`1px solid ${C.border}`,borderRadius:'8px',padding:'0.3rem 0.6rem',cursor:'pointer',color:C.sub}},'✕')),
-        userEmail&&r('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',background:C.accentBg,borderRadius:'12px',padding:'0.5rem 0.75rem',marginBottom:'0.25rem'}},
-          r('div',null,
+        userEmail&&r('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',background:C.accentBg,borderRadius:'12px',padding:'0.6rem 0.75rem',marginBottom:'0.25rem',gap:'0.5rem'}},
+          r('div',{style:{minWidth:0}},
             r('div',{style:{fontSize:'0.58rem',fontWeight:700,color:C.muted,letterSpacing:'0.08em'}},'SIGNED IN AS'),
-            r('div',{style:{fontSize:'0.72rem',fontWeight:600,color:C.accent,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:'160px'}},userEmail)
+            r('div',{style:{fontSize:'0.72rem',fontWeight:600,color:C.accent,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},userEmail)
           ),
-          r('a',{href:'/cdn-cgi/access/logout',style:{fontSize:'0.65rem',color:C.red,fontWeight:700,textDecoration:'none',background:C.redBg,padding:'3px 8px',borderRadius:'6px'}},'Sign out')
+          r('a',{href:'/api/auth/logout',style:{fontSize:'0.65rem',color:C.red,fontWeight:700,textDecoration:'none',background:C.redBg,padding:'4px 10px',borderRadius:'6px',whiteSpace:'nowrap',flexShrink:0}},'Sign out')
         ),
         ...[['home','🏠 Home'],['analytics','📊 Analytics']].map(([v,l])=>r('button',{key:v,onClick:()=>{setView(v);setSidebar(false);},style:{textAlign:'left',padding:'0.6rem 0.85rem',border:`1px solid ${view===v?C.accent+'60':C.border}`,borderRadius:'12px',background:view===v?C.accentBg:'transparent',fontWeight:view===v?700:400,cursor:'pointer',fontSize:'0.88rem',color:view===v?C.accent:C.sub}},l)),
         r('div',{style:{height:'1px',background:C.border,margin:'0.5rem 0'}}),
@@ -594,12 +595,7 @@ function Jimikki(){
           r('div',{style:{width:'8px',height:'8px',borderRadius:'50%',background:x.isPrimary?C.accent:C.muted,flexShrink:0}}),
           r('div',{style:{flex:1,minWidth:0}},r('div',{style:{fontSize:'0.82rem',fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},x.name),r('div',{style:{fontSize:'0.68rem',color:C.sub}},fmt(x.balance))),
           !x.isPrimary&&r('button',{onClick:()=>setPrimary(x.id),style:{background:'none',border:`1px solid ${C.border}`,borderRadius:'6px',padding:'2px 6px',cursor:'pointer',color:C.muted,fontSize:'0.62rem'}},'★'),
-          /* Delete button: grey/locked icon if balance > 0, red × if zero */
-          !x.isPrimary&&r('button',{
-            onClick:()=>tryDelHolder(x.id),
-            title:x.balance>0?'Clear balance to ₹0 before deleting':'Archive holder',
-            style:{background:'none',border:'none',cursor:x.balance>0?'not-allowed':'pointer',color:x.balance>0?C.muted:C.red,fontSize:'1rem',opacity:x.balance>0?0.4:0.75}
-          },x.balance>0?'🔒':'×')
+          !x.isPrimary&&r('button',{onClick:()=>tryDelHolder(x.id),title:x.balance>0?'Clear balance to ₹0 before deleting':'Delete holder',style:{background:'none',border:'none',cursor:x.balance>0?'not-allowed':'pointer',color:x.balance>0?C.muted:C.red,fontSize:'1rem',opacity:x.balance>0?0.4:0.75}},x.balance>0?'🔒':'×')
         )),
         r('div',{style:{display:'flex',gap:'0.35rem'}},r(FI,{value:nhName,onChange:ev=>setNhName(ev.target.value),onKeyDown:ev=>ev.key==='Enter'&&addHolder(),placeholder:'Name',style:{flex:2,minWidth:0}}),r(FI,{value:nhBal,onChange:ev=>setNhBal(ev.target.value),onKeyDown:ev=>ev.key==='Enter'&&addHolder(),placeholder:'₹',type:'number',min:'0',style:{flex:1,minWidth:0}}),r('button',{onClick:addHolder,style:{background:C.accent,color:'white',border:'none',borderRadius:'12px',padding:'0.5rem 0.75rem',cursor:'pointer',fontWeight:700,fontSize:'1rem',flexShrink:0}},'+')
         ),
@@ -618,15 +614,12 @@ function Jimikki(){
       )
     ),
 
-    /* Header */
     r('header',{style:{position:'sticky',top:0,zIndex:100,background:'rgba(244,246,251,0.9)',backdropFilter:'blur(14px)',borderBottom:`1px solid ${C.border}`,padding:'0.85rem 1.1rem',display:'flex',justifyContent:'space-between',alignItems:'center'}},
       r('span',{style:{fontFamily:'cursive',fontSize:'1.7rem',color:C.accent}},'Jimikki'),
       r('button',{onClick:()=>setSidebar(true),style:{background:'white',border:`1px solid ${C.border}`,borderRadius:'10px',padding:'0.45rem 0.7rem',cursor:'pointer',display:'flex',flexDirection:'column',gap:'4px',boxShadow:'0 1px 4px rgba(0,0,0,0.06)'}},...[0,1,2].map(i=>r('span',{key:i,style:{display:'block',width:'18px',height:'2px',background:C.sub,borderRadius:'1px'}})))
     ),
 
     r('main',{style:{padding:'1rem',paddingBottom:'7rem',display:'flex',flexDirection:'column',gap:'1rem'}},
-
-      /* ═══ HOME ═══ */
       view==='home'&&r('div',{style:{display:'flex',flexDirection:'column',gap:'1rem'}},
         r('div',{style:{background:'linear-gradient(135deg,#4338CA 0%,#6366F1 60%,#818CF8 100%)',borderRadius:'24px',padding:'1.75rem 1.5rem',position:'relative',overflow:'hidden',boxShadow:'0 8px 32px rgba(79,70,229,0.3)'}},
           r('div',{style:{position:'absolute',top:'-30px',right:'-20px',width:'130px',height:'130px',borderRadius:'50%',background:'rgba(255,255,255,0.08)'}}),
@@ -655,7 +648,6 @@ function Jimikki(){
           ),
           r(BalanceAreaChart,{data:hBalData,height:200,onExplore:handleExplore})
         ),
-        /* ── Holdings card (renamed from "Your Holders") ── */
         actH.length>0
           ?r(Card,null,r('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'0.85rem'}},'Your Holdings'),
             ...actH.map((x,i)=>r('div',{key:x.id,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'0.65rem 0',borderBottom:i<actH.length-1?`1px solid ${C.border}`:'none'}},
@@ -666,13 +658,9 @@ function Jimikki(){
           :r('div',{style:{background:'white',borderRadius:'20px',padding:'2.5rem 1.5rem',textAlign:'center',border:`1.5px dashed ${C.border}`}},r('div',{style:{fontSize:'2rem',marginBottom:'0.75rem'}},'💳'),r('div',{style:{fontWeight:700,color:C.text,marginBottom:'0.4rem'}},'No holdings yet'),r('div',{style:{fontSize:'0.78rem',color:C.sub}},'Open ☰ to add your first money holder'))
       ),
 
-      /* ═══ ANALYTICS ═══ */
       view==='analytics'&&r('div',{style:{display:'flex',flexDirection:'column',gap:'1rem'}},
         r('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'0.5rem'}},
-          r('div',null,
-            r('div',{style:{fontWeight:700,fontSize:'0.95rem',color:C.text}},'Analytics'),
-            r('div',{style:{fontSize:'0.65rem',color:C.sub,marginTop:'2px'}},aBadge())
-          ),
+          r('div',null,r('div',{style:{fontWeight:700,fontSize:'0.95rem',color:C.text}},'Analytics'),r('div',{style:{fontSize:'0.65rem',color:C.sub,marginTop:'2px'}},aBadge())),
           r('button',{onClick:()=>setAFilterOpen(true),style:{display:'flex',alignItems:'center',gap:'6px',padding:'8px 14px',borderRadius:'12px',border:`1.5px solid ${aActiveCount>0?C.accent:C.border}`,background:aActiveCount>0?C.accentBg:'white',color:aActiveCount>0?C.accent:C.sub,cursor:'pointer',fontWeight:700,fontSize:'0.78rem',whiteSpace:'nowrap',flexShrink:0}},
             '⚙️ Filter',aActiveCount>0&&r('span',{style:{background:C.accent,color:'white',borderRadius:'999px',padding:'1px 7px',fontSize:'0.65rem',fontWeight:800}},aActiveCount)
           )
@@ -688,29 +676,21 @@ function Jimikki(){
         aView==='flow'&&r(Card,null,
           r('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'3px'}},'Net Savings — '+filterLabel(aFilter)),
           r('div',{style:{fontSize:'0.65rem',color:C.sub,marginBottom:'0.85rem'}},'Last 12 months · tap a bar to see breakdown'),
-          aStats.inc===0&&aStats.spd===0
-            ?r('div',{style:{textAlign:'center',padding:'2rem',color:C.muted,fontSize:'0.82rem'}},'No transactions for this period')
-            :r(NetBarChart,{data:buildNetData(actT.filter(t=>!aHFilter||t.holderId===aHFilter),aHFilter),height:190})
+          aStats.inc===0&&aStats.spd===0?r('div',{style:{textAlign:'center',padding:'2rem',color:C.muted,fontSize:'0.82rem'}},'No transactions for this period'):r(NetBarChart,{data:buildNetData(actT.filter(t=>!aHFilter||t.holderId===aHFilter),aHFilter),height:190})
         ),
         aView==='buckets'&&r('div',{style:{display:'flex',flexDirection:'column',gap:'1rem'}},
           r(Card,null,
             r('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'1rem'}},r('div',{style:{width:'10px',height:'10px',borderRadius:'50%',background:C.green}}),r('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text}},'Income by Source')),
-            incStats.length===0
-              ?r('div',{style:{textAlign:'center',padding:'1.5rem',color:C.muted,fontSize:'0.8rem'}},'No income data for this period')
-              :r('div',null,r('div',{style:{display:'flex',justifyContent:'center',marginBottom:'1.1rem'}},r(DonutChart,{data:incStats.map(b=>({...b,id:b.id}))})),...incStats.map(b=>r(BucketRow,{key:b.id,b,total:b.total,grand:incTotal})))
+            incStats.length===0?r('div',{style:{textAlign:'center',padding:'1.5rem',color:C.muted,fontSize:'0.8rem'}},'No income data for this period'):r('div',null,r('div',{style:{display:'flex',justifyContent:'center',marginBottom:'1.1rem'}},r(DonutChart,{data:incStats})),...incStats.map(b=>r(BucketRow,{key:b.id,b,total:b.total,grand:incTotal})))
           ),
           r(Card,null,
             r('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'1rem'}},r('div',{style:{width:'10px',height:'10px',borderRadius:'50%',background:C.red}}),r('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text}},'Spending by Category')),
-            expStats.length===0
-              ?r('div',{style:{textAlign:'center',padding:'1.5rem',color:C.muted,fontSize:'0.8rem'}},'No spending data for this period')
-              :r('div',null,r('div',{style:{display:'flex',justifyContent:'center',marginBottom:'1.1rem'}},r(DonutChart,{data:expStats.map(b=>({...b,id:b.id}))})),...expStats.map(b=>r(BucketRow,{key:b.id,b,total:b.total,grand:expTotal})))
+            expStats.length===0?r('div',{style:{textAlign:'center',padding:'1.5rem',color:C.muted,fontSize:'0.8rem'}},'No spending data for this period'):r('div',null,r('div',{style:{display:'flex',justifyContent:'center',marginBottom:'1.1rem'}},r(DonutChart,{data:expStats})),...expStats.map(b=>r(BucketRow,{key:b.id,b,total:b.total,grand:expTotal})))
           )
         ),
         aView==='txns'&&r(Card,null,
           r('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'0.75rem'}},'Transactions ',r('span',{style:{fontWeight:400,color:C.muted,fontSize:'0.72rem'}},`(${aFilteredT.length})`)),
-          aFilteredT.length===0
-            ?r('div',{style:{color:C.muted,fontSize:'0.82rem',textAlign:'center',padding:'2rem 0'}},'No transactions for this period')
-            :aFilteredT.map(t=>r(TxnRow,{key:t.id,t,onDel:()=>setPendingDelId(t.id)})),
+          aFilteredT.length===0?r('div',{style:{color:C.muted,fontSize:'0.82rem',textAlign:'center',padding:'2rem 0'}},'No transactions for this period'):aFilteredT.map(t=>r(TxnRow,{key:t.id,t,onDel:()=>setPendingDelId(t.id)})),
           delT.length>0&&r('div',{style:{marginTop:'1.25rem'}},
             r('div',{style:{display:'flex',alignItems:'center',gap:'6px',marginBottom:'0.6rem'}},r('span',{style:{fontSize:'1rem'}},'🗑️'),r('span',{style:{fontWeight:700,fontSize:'0.82rem',color:C.text}},'Recycle Bin'),r('span',{style:{fontWeight:400,color:C.muted,fontSize:'0.72rem'}},`(${delT.length})`)),
             r('div',{style:{background:'#FFFBEB',borderRadius:'14px',padding:'0.75rem 0.85rem',border:'1px solid #FDE68A'}},...delT.map(t=>r(TxnRow,{key:t.id,t,onRest:()=>restTxn(t.id)})))
@@ -719,7 +699,6 @@ function Jimikki(){
       )
     ),
 
-    /* Bottom Nav */
     r('nav',{style:{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:'480px',background:'rgba(255,255,255,0.95)',backdropFilter:'blur(16px)',borderTop:`1px solid ${C.border}`,display:'flex',alignItems:'center',zIndex:90,height:'64px',boxShadow:'0 -2px 16px rgba(0,0,0,0.06)'}},
       r('button',{onClick:()=>setView('home'),style:{flex:1,height:'100%',background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'2px',color:view==='home'?C.accent:C.muted}},r('span',{style:{fontSize:'1.1rem'}},'🏠'),r('span',{style:{fontSize:'0.6rem',fontWeight:view==='home'?700:400}},'Home')),
       r('div',{style:{flex:'0 0 80px',display:'flex',justifyContent:'center',alignItems:'center'}},
