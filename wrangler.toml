@@ -7,5 +7,6 @@ binding = "DB"
 database_name = "jimikki-db"
 database_id = "a764c7b3-9c27-4dee-b1c6-0b029aba679a"
 
-
+[vars]
+GOOGLE_SERVICE_EMAIL = "jimikki-bot@jimikki.iam.gserviceaccount.com"
 
