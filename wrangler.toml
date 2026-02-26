@@ -5,4 +5,4 @@ compatibility_date = "2024-01-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "jimikki-db"
-database_id = "REPLACE_WITH_YOUR_D1_ID"
+database_id = "a764c7b3-9c27-4dee-b1c6-0b029aba679a"
