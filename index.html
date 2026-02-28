@@ -28,6 +28,17 @@ input[type=date]{color-scheme:light}
 @keyframes aiShake{0%,72%,100%{transform:rotate(0deg)}75%{transform:rotate(-12deg)}78%{transform:rotate(12deg)}81%{transform:rotate(-10deg)}84%{transform:rotate(10deg)}87%{transform:rotate(-6deg)}90%{transform:rotate(6deg)}93%{transform:rotate(-3deg)}96%{transform:rotate(3deg)}}
 @keyframes typingDot{0%,60%,100%{transform:translateY(0);opacity:0.4}30%{transform:translateY(-5px);opacity:1}}
 @keyframes chatFadeIn{0%{opacity:0}100%{opacity:1}}
+@media(min-width:769px){
+  body{background:#ECEEF5}
+  .desktop-shell{display:grid!important;grid-template-columns:240px 1fr;min-height:100vh;max-width:1200px!important;margin:0 auto!important;background:transparent!important;}
+  .desktop-sidebar{display:flex!important;}
+  .desktop-main{background:#F4F6FB;border-radius:0;min-height:100vh;overflow-y:auto;}
+  .mobile-nav{display:none!important;}
+  .mobile-header{display:none!important;}
+  .desktop-topbar{display:flex!important;}
+  .main-content-area{padding:1.5rem 2rem!important;padding-bottom:2rem!important;max-width:900px;}
+  .ai-fab{bottom:2rem!important;right:2rem!important;}
+}
 </style>
 </head>
 <body><div id="root"></div>
@@ -506,6 +517,7 @@ function Jimikki(){
   const [loggedIn,setLoggedIn]=useState(null);
   const [pinHash,setPinHash]=useState(null);   // stored hash from DB
   const [pinUnlocked,setPinUnlocked]=useState(false); // session unlock
+  const [isDesktop,setIsDesktop]=useState(()=>window.innerWidth>768);
   const [userEmail,setUserEmail]=useState('');
   const [sheetUrl,setSheetUrl]=useState('');  // ← NEW
   const [toast,setToast]=useState('');
@@ -562,6 +574,8 @@ const [nhBal,setNhBal]=useState('');
   const ibN=id=>incBuckets.find(x=>x.id===id)?.name||'(removed)';
   const ibC=id=>incBuckets.find(x=>x.id===id)?.color||C.muted;
   const wealth=fH=>(fH?actH.filter(x=>x.id===fH):actH).reduce((s,x)=>s+x.balance,0);
+
+  useEffect(()=>{const fn=()=>setIsDesktop(window.innerWidth>768);window.addEventListener('resize',fn);return()=>window.removeEventListener('resize',fn);},[]);
 
   useEffect(()=>{
     fetch('/api/data')
@@ -766,7 +780,27 @@ const [nhBal,setNhBal]=useState('');
   // PIN set but not unlocked this session → show PIN entry
   if(loggedIn&&loaded&&pinHash&&!pinUnlocked)return r(EnterPinScreen,{email:userEmail,onUnlock:(h,onFail)=>{if(h===pinHash){setPinUnlocked(true);}else{onFail();}}});
 
-  return r('div',{style:{minHeight:'100vh',background:C.bg,maxWidth:'480px',margin:'0 auto',fontFamily:'"Inter",system-ui,sans-serif',color:C.text}},
+  return r('div',{className:'desktop-shell',style:{minHeight:'100vh',background:C.bg,maxWidth:'480px',margin:'0 auto',fontFamily:'"Inter",system-ui,sans-serif',color:C.text}},
+
+    /* ── DESKTOP SIDEBAR (hidden on mobile via CSS) ── */
+    r('aside',{className:'desktop-sidebar',style:{display:'none',flexDirection:'column',background:'white',borderRight:`1px solid ${C.border}`,padding:'1.5rem 1rem',gap:'0.5rem',position:'sticky',top:0,height:'100vh',overflowY:'auto'}},
+      r('div',{style:{fontFamily:'cursive',fontSize:'1.6rem',color:C.accent,fontWeight:900,letterSpacing:'-1px',marginBottom:'1.5rem',paddingLeft:'0.5rem'}},'Jimikki'),
+      ...[['home','🏠','Home'],['analytics','📊','Analytics']].map(([v,icon,label])=>
+        r('button',{key:v,onClick:()=>setView(v),style:{display:'flex',alignItems:'center',gap:'10px',padding:'0.7rem 1rem',borderRadius:'14px',border:'none',background:view===v?C.accentBg:'transparent',color:view===v?C.accent:C.sub,cursor:'pointer',fontWeight:view===v?700:500,fontSize:'0.9rem',textAlign:'left',width:'100%',transition:'background 0.15s'}},
+          r('span',{style:{fontSize:'1.1rem'}},icon), label
+        )
+      ),
+      r('button',{onClick:()=>setAiOpen(true),style:{display:'flex',alignItems:'center',gap:'10px',padding:'0.7rem 1rem',borderRadius:'14px',border:'none',background:'linear-gradient(135deg,#4F46E5,#7C3AED)',color:'white',cursor:'pointer',fontWeight:600,fontSize:'0.9rem',marginTop:'0.5rem',width:'100%'}},
+        r('span',{style:{fontSize:'1.1rem'}},'✦'), 'Ask AI'
+      ),
+      r('div',{style:{flex:1}}),
+      userEmail&&r('div',{style:{fontSize:'0.7rem',color:C.muted,padding:'0.5rem',borderRadius:'10px',background:C.bg,wordBreak:'break-all'}},userEmail),
+      r('button',{onClick:()=>{setSidebar(false);setPinHash(null);setPinUnlocked(false);},style:{display:'flex',alignItems:'center',gap:'8px',padding:'0.6rem 1rem',borderRadius:'12px',border:`1px solid ${C.accent}`,background:'white',color:C.accent,cursor:'pointer',fontSize:'0.78rem',fontWeight:700,width:'100%',marginTop:'0.35rem'}},'🔑 Change PIN'),
+      r('a',{href:'/api/auth/logout',style:{display:'flex',alignItems:'center',gap:'8px',padding:'0.6rem 1rem',borderRadius:'12px',background:C.redBg,color:C.red,textDecoration:'none',fontSize:'0.78rem',fontWeight:700,marginTop:'0.35rem'}},'↩ Sign out')
+    ),
+
+    /* ── MOBILE + DESKTOP MAIN CONTENT ── */
+    r('div',{className:'desktop-main',style:{flex:1,minWidth:0}},
 
     toast&&r('div',{style:{position:'fixed',top:'1rem',left:'50%',transform:'translateX(-50%)',zIndex:2000,background:C.text,color:'white',padding:'0.55rem 1.25rem',borderRadius:'999px',fontSize:'0.78rem',whiteSpace:'nowrap',boxShadow:'0 4px 20px rgba(0,0,0,0.2)'}},toast),
     pendingTxn&&r(DeleteConfirmModal,{txn:pendingTxn,bName:bN,ibName:ibN,hName:hN,onConfirm:confirmDel,onCancel:()=>setPendingDelId(null)}),
@@ -775,6 +809,7 @@ const [nhBal,setNhBal]=useState('');
 
     /* ── FLOATING AI BUTTON (simple, clean) ── */
     !aiOpen&&r('button',{
+      className:'ai-fab',
       onClick:()=>setAiOpen(true),
       title:'Ask Jimikki AI',
       style:{
@@ -1062,12 +1097,12 @@ const [nhBal,setNhBal]=useState('');
       )
     ),
 
-    r('header',{style:{position:'sticky',top:0,zIndex:100,background:'rgba(244,246,251,0.9)',backdropFilter:'blur(14px)',borderBottom:`1px solid ${C.border}`,padding:'0.85rem 1.1rem',display:'flex',justifyContent:'space-between',alignItems:'center'}},
+    r('header',{className:'mobile-header',style:{position:'sticky',top:0,zIndex:100,background:'rgba(244,246,251,0.9)',backdropFilter:'blur(14px)',borderBottom:`1px solid ${C.border}`,padding:'0.85rem 1.1rem',display:'flex',justifyContent:'space-between',alignItems:'center'}},
       r('span',{style:{fontFamily:'cursive',fontSize:'1.7rem',color:C.accent}},'Jimikki'),
       r('button',{onClick:()=>setSidebar(true),style:{background:'white',border:`1px solid ${C.border}`,borderRadius:'10px',padding:'0.45rem 0.7rem',cursor:'pointer',display:'flex',flexDirection:'column',gap:'4px',boxShadow:'0 1px 4px rgba(0,0,0,0.06)'}},...[0,1,2].map(i=>r('span',{key:i,style:{display:'block',width:'18px',height:'2px',background:C.sub,borderRadius:'1px'}})))
     ),
 
-    r('main',{style:{padding:'1rem',paddingBottom:'7rem',display:'flex',flexDirection:'column',gap:'1rem'}},
+    r('main',{className:'main-content-area',style:{padding:'1rem',paddingBottom:'7rem',display:'flex',flexDirection:'column',gap:'1rem'}},
       view==='home'&&r('div',{style:{display:'flex',flexDirection:'column',gap:'1rem'}},
         r('div',{style:{background:'linear-gradient(135deg,#4338CA 0%,#6366F1 60%,#818CF8 100%)',borderRadius:'24px',padding:'1.75rem 1.5rem',position:'relative',overflow:'hidden',boxShadow:'0 8px 32px rgba(79,70,229,0.3)'}},
           r('div',{style:{position:'absolute',top:'-30px',right:'-20px',width:'130px',height:'130px',borderRadius:'50%',background:'rgba(255,255,255,0.08)'}}),
@@ -1179,7 +1214,7 @@ const [nhBal,setNhBal]=useState('');
       )
     ),
 
-    r('nav',{style:{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:'480px',background:'rgba(255,255,255,0.95)',backdropFilter:'blur(16px)',borderTop:`1px solid ${C.border}`,display:'flex',alignItems:'center',zIndex:90,height:'64px',boxShadow:'0 -2px 16px rgba(0,0,0,0.06)'}},
+    r('nav',{className:'mobile-nav',style:{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:'480px',background:'rgba(255,255,255,0.95)',backdropFilter:'blur(16px)',borderTop:`1px solid ${C.border}`,display:'flex',alignItems:'center',zIndex:90,height:'64px',boxShadow:'0 -2px 16px rgba(0,0,0,0.06)'}},
       r('button',{onClick:()=>setView('home'),style:{flex:1,height:'100%',background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'2px',color:view==='home'?C.accent:C.muted}},r('span',{style:{fontSize:'1.1rem'}},'🏠'),r('span',{style:{fontSize:'0.6rem',fontWeight:view==='home'?700:400}},'Home')),
       r('div',{style:{flex:'0 0 80px',display:'flex',justifyContent:'center',alignItems:'center'}},
         r('button',{onClick:()=>{setFabOpen(true);setFabMode(null);},style:{width:'52px',height:'52px',borderRadius:'16px',background:C.accent,border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 6px 20px rgba(79,70,229,0.4)',transform:'translateY(-10px)',color:'white',flexShrink:0}},
@@ -1188,6 +1223,7 @@ const [nhBal,setNhBal]=useState('');
       ),
       r('button',{onClick:()=>setView('analytics'),style:{flex:1,height:'100%',background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'2px',color:view==='analytics'?C.accent:C.muted}},r('span',{style:{fontSize:'1.1rem'}},'📊'),r('span',{style:{fontSize:'0.6rem',fontWeight:view==='analytics'?700:400}},'Analytics'))
     )
+  ) // end desktop-main
   );
 }
 
