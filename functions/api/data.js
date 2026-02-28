@@ -37,6 +37,15 @@ export async function onRequestPost(context) {
       'INSERT OR REPLACE INTO user_data (email, data, updated_at) VALUES (?, ?, datetime("now"))'
     ).bind(email, body).run();
 
+    // Ensure user_sheets table exists with correct schema
+    await context.env.DB.prepare(`
+      CREATE TABLE IF NOT EXISTS user_sheets (
+        email TEXT PRIMARY KEY,
+        sheet_url TEXT NOT NULL,
+        updated_at TEXT DEFAULT (datetime('now'))
+      )
+    `).run();
+
     // Sync to Google Sheets via Apps Script
     let sheetUrl = null;
     const scriptUrl = context.env.GOOGLE_SCRIPT_URL;
@@ -62,7 +71,7 @@ export async function onRequestPost(context) {
       headers: { 'Content-Type': 'application/json' }
     });
 
-  } catch {
-    return new Response('Server error', { status: 500 });
+  } catch (e) {
+    return new Response(JSON.stringify({ error: e.message }), { status: 500 });
   }
 }
