@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -82,9 +81,9 @@ function buildBalanceData(txns,holders,fH,gran){
   const now=new Date();
   function balAt(ds){const after=base.filter(t=>t.date>ds);return Math.max(0,curBal-after.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0)+after.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0));}
   if(gran==='week')return Array.from({length:7},(_,i)=>{const d=new Date(now);d.setDate(d.getDate()-(6-i));const k=d.toISOString().slice(0,10);return{name:d.toLocaleDateString('en',{weekday:'short'}),Value:balAt(k),date:k,gran:'week'};});
-  if(gran==='month')return Array.from({length:12},(_,i)=>{const mo=new Date(now.getFullYear(),now.getMonth()-11+i,1);const last=new Date(mo.getFullYear(),mo.getMonth()+1,0);const k=last.toISOString().slice(0,10);return{name:mo.toLocaleDateString('en',{month:'short'}),Value:balAt(k),date:k,gran:'month'};});
+  if(gran==='month'){const yr=now.getFullYear();return Array.from({length:12},(_,i)=>{const mo=new Date(yr,i,1);const last=new Date(yr,i+1,0);const k=last.toISOString().slice(0,10);return{name:mo.toLocaleDateString('en',{month:'short'}),Value:balAt(k),date:k,gran:'month'};});}
   if(gran==='year'){const yr=now.getFullYear();return Array.from({length:12},(_,i)=>{const last=new Date(yr,i+1,0);const k=last.toISOString().slice(0,10);return{name:last.toLocaleDateString('en',{month:'short'}),Value:balAt(k),date:k,gran:'year'};});}
-  return Array.from({length:5},(_,i)=>{const yr=now.getFullYear()-4+i;return{name:String(yr),Value:balAt(`${yr}-12-31`),date:`${yr}-12-31`,gran:'5year',year:yr};});
+  const txnYears=[...new Set(txns.filter(t=>t.date).map(t=>+t.date.slice(0,4)))].filter(y=>!isNaN(y)&&y>2000).sort();const startYr=txnYears.length>0?txnYears[0]:now.getFullYear();const allYrs=[];for(let y=startYr;y<=now.getFullYear();y++)allYrs.push(y);return allYrs.map(yr=>({name:String(yr),Value:balAt(`${yr}-12-31`),date:`${yr}-12-31`,gran:'5year',year:yr}));
 }
 function buildNetData(txns,fH){
   const base=txns.filter(t=>t.type!=='swap'&&(!fH||t.holderId===fH));
@@ -334,7 +333,7 @@ function Card({children,style={}}){return r('div',{style:{background:C.card,bord
 function SL({children,req}){return r('div',{style:{fontSize:'0.62rem',fontWeight:700,color:C.muted,letterSpacing:'0.09em',marginBottom:'5px',display:'flex',gap:'3px'}},children,req&&r('span',{style:{color:C.red}},'*'));}
 function FI({style={},...p}){return r('input',{...p,style:{width:'100%',background:C.bg,border:`1.5px solid ${C.border}`,borderRadius:'12px',padding:'0.6rem 0.85rem',color:C.text,fontSize:'0.9rem',outline:'none',boxSizing:'border-box',...style}});}
 function FS({children,style={},...p}){return r('select',{...p,style:{width:'100%',background:C.bg,border:`1.5px solid ${C.border}`,borderRadius:'12px',padding:'0.6rem 0.85rem',color:C.text,fontSize:'0.88rem',outline:'none',boxSizing:'border-box',...style}},children);}
-function GranPills({value,onChange}){return r('div',{style:{display:'flex',gap:'4px',flexWrap:'wrap'}},...[['week','Weekly'],['month','Monthly'],['year','Yearly'],['5year','5Y']].map(([v,l])=>r('button',{key:v,onClick:()=>onChange(v),style:{padding:'4px 10px',borderRadius:'999px',border:`1px solid ${value===v?C.accent:C.border}`,background:value===v?C.accent:'white',color:value===v?'white':C.sub,cursor:'pointer',fontSize:'0.68rem',fontWeight:700}},l)));}
+function GranPills({value,onChange}){return r('div',{style:{display:'flex',gap:'4px',flexWrap:'wrap'}},...[['week','Weekly'],['month','Monthly'],['year','Yearly'],['5year','All Yrs']].map(([v,l])=>r('button',{key:v,onClick:()=>onChange(v),style:{padding:'4px 10px',borderRadius:'999px',border:`1px solid ${value===v?C.accent:C.border}`,background:value===v?C.accent:'white',color:value===v?'white':C.sub,cursor:'pointer',fontSize:'0.68rem',fontWeight:700}},l)));}
 
 function Jimikki(){
   const [view,setView]=useState('home');
@@ -647,12 +646,12 @@ function Jimikki(){
               r('div',null,r('div',{style:{fontSize:'0.58rem',fontWeight:700,color:'rgba(255,255,255,0.5)',letterSpacing:'0.12em',marginBottom:'4px'}},'CONSOLIDATED WEALTH'),r('div',{style:{fontSize:'2.4rem',fontWeight:800,color:'white',letterSpacing:'-2px',lineHeight:1.1}},fmt(wealth(hHFilter)))),
               r('button',{onClick:()=>setHFilterOpen(true),style:{display:'flex',alignItems:'center',gap:'5px',padding:'5px 10px',borderRadius:'999px',background:'rgba(255,255,255,0.2)',border:'1px solid rgba(255,255,255,0.3)',color:'white',cursor:'pointer',fontSize:'0.68rem',fontWeight:700,whiteSpace:'nowrap'}},'🗓 ',filterLabel(hFilter))
             ),
-            r('div',{style:{display:'flex',gap:'1.5rem',marginTop:'1.1rem'}},
-              r('div',null,r('div',{style:{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}},'IN'),r('div',{style:{fontSize:'1rem',fontWeight:700,color:'#A7F3D0'}},fmt(hStats.inc))),
-              r('div',{style:{width:'1px',background:'rgba(255,255,255,0.15)'}}),
-              r('div',null,r('div',{style:{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}},'OUT'),r('div',{style:{fontSize:'1rem',fontWeight:700,color:'#FCA5A5'}},fmt(hStats.spd))),
-              r('div',{style:{width:'1px',background:'rgba(255,255,255,0.15)'}}),
-              r('div',null,r('div',{style:{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}},'NET'),r('div',{style:{fontSize:'1rem',fontWeight:700,color:'white'}},fmt(hStats.net)))
+            r('div',{style:{display:'flex',gap:'0.5rem',marginTop:'1.1rem',minWidth:0}},
+              r('div',{style:{flex:1,minWidth:0}},r('div',{style:{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}},'IN'),r('div',{style:{fontSize:'0.95rem',fontWeight:700,color:'#A7F3D0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},fmtS(hStats.inc))),
+              r('div',{style:{width:'1px',flexShrink:0,background:'rgba(255,255,255,0.15)'}}),
+              r('div',{style:{flex:1,minWidth:0}},r('div',{style:{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}},'OUT'),r('div',{style:{fontSize:'0.95rem',fontWeight:700,color:'#FCA5A5',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},fmtS(hStats.spd))),
+              r('div',{style:{width:'1px',flexShrink:0,background:'rgba(255,255,255,0.15)'}}),
+              r('div',{style:{flex:1,minWidth:0}},r('div',{style:{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}},'NET'),r('div',{style:{fontSize:'0.95rem',fontWeight:700,color:'white',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},fmtS(hStats.net)))
             )
           )
         ),
