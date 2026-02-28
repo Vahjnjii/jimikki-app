@@ -16,10 +16,10 @@ input[type=date]{color-scheme:light}
 @keyframes jimSuccessPop{0%{transform:scale(0.55) translateY(20px);opacity:0}55%{transform:scale(1.06) translateY(-4px);opacity:1}75%{transform:scale(0.97)}100%{transform:scale(1) translateY(0);opacity:1}}
 @keyframes jimCheckDraw{0%{stroke-dashoffset:40}100%{stroke-dashoffset:0}}
 @keyframes jimRipple{0%{transform:scale(0.8);opacity:0.6}100%{transform:scale(2.2);opacity:0}}
-@keyframes chatSlideUp{0%{transform:translateY(30px);opacity:0}100%{transform:translateY(0);opacity:1}}
 @keyframes chatBubbleIn{0%{transform:scale(0.9) translateY(6px);opacity:0}100%{transform:scale(1) translateY(0);opacity:1}}
-@keyframes aiBtnPulse{0%,100%{box-shadow:0 4px 20px rgba(99,102,241,0.55)}50%{box-shadow:0 4px 30px rgba(99,102,241,0.9),0 0 0 7px rgba(99,102,241,0.12)}}
+@keyframes aiBtnPulse{0%,100%{box-shadow:0 2px 12px rgba(99,102,241,0.45)}50%{box-shadow:0 2px 20px rgba(99,102,241,0.75)}}
 @keyframes typingDot{0%,60%,100%{transform:translateY(0);opacity:0.4}30%{transform:translateY(-5px);opacity:1}}
+@keyframes chatFadeIn{0%{opacity:0}100%{opacity:1}}
 </style>
 </head>
 <body><div id="root"></div>
@@ -389,6 +389,7 @@ function Jimikki(){
   const [aiLoading,setAiLoading]=useState(false);
   const aiEndRef=useRef(null);
   const aiInputRef=useRef(null);
+  const [nhName,setNhName]=useState('');
 const [nhBal,setNhBal]=useState('');
   const [nbExpName,setNbExpName]=useState('');const [nbExpColor,setNbExpColor]=useState(PALETTE[0]);
   const [nbIncName,setNbIncName]=useState('');const [nbIncColor,setNbIncColor]=useState(PALETTE[3]);
@@ -459,8 +460,13 @@ const [nhBal,setNhBal]=useState('');
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({
           message:msg,
-          history:newHistory.slice(-6),
-          userData:{holders,transactions:txns,expBuckets,incBuckets}
+          history:newHistory.slice(-10),
+          userData:{
+            holders,
+            transactions:txns, // ALL transactions, no limit
+            expBuckets,
+            incBuckets
+          }
         })
       });
       const data=await res.json();
@@ -610,118 +616,158 @@ const [nhBal,setNhBal]=useState('');
     hFilterOpen&&r(HomeFilterPanel,{filter:hFilter,onChange:setHFilter,onClose:()=>setHFilterOpen(false)}),
     aFilterOpen&&r(AnalyticsFilterModal,{timeFilter:aFilter,holderFilter:aHFilter,bucketFilter:aBFilter,holders,actExpB,actIncB,onApply:handleAFilter,onClose:()=>setAFilterOpen(false)}),
 
-    /* ── FLOATING AI GIRL BUTTON ── */
-    r('button',{
-      onClick:()=>setAiOpen(o=>!o),
-      title:'Chat with Jimikki AI',
+    /* ── FLOATING AI BUTTON (simple, clean) ── */
+    !aiOpen&&r('button',{
+      onClick:()=>setAiOpen(true),
+      title:'Ask Jimikki AI',
       style:{
-        position:'fixed',bottom:'82px',right:'18px',width:'56px',height:'56px',
-        borderRadius:'50%',border:'none',cursor:'pointer',
-        background:'linear-gradient(135deg,#6366F1 0%,#8B5CF6 60%,#A855F7 100%)',
+        position:'fixed',bottom:'80px',right:'16px',
+        width:'48px',height:'48px',borderRadius:'50%',border:'none',cursor:'pointer',
+        background:'linear-gradient(135deg,#4F46E5,#7C3AED)',
         display:'flex',alignItems:'center',justifyContent:'center',
-        animation:'aiBtnPulse 2.5s ease-in-out infinite',
-        zIndex:150,flexShrink:0,
-        transition:'transform 0.2s ease',
-        transform:aiOpen?'scale(0.92) rotate(10deg)':'scale(1) rotate(0deg)'
+        boxShadow:'0 4px 16px rgba(79,70,229,0.45)',
+        animation:'aiBtnPulse 3s ease-in-out infinite',
+        zIndex:150,transition:'transform 0.15s'
       }
     },
-      r('span',{style:{fontSize:'1.6rem',lineHeight:1}},'🧞‍♀️')
+      r('svg',{width:22,height:22,viewBox:'0 0 24 24',fill:'none',stroke:'white',strokeWidth:2,strokeLinecap:'round',strokeLinejoin:'round'},
+        r('path',{d:'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'})
+      )
     ),
 
-    /* ── AI CHAT PANEL ── */
+    /* ── FULL SCREEN AI CHAT ── */
     aiOpen&&r('div',{style:{
-      position:'fixed',bottom:'148px',right:'12px',
-      width:'min(360px, calc(100vw - 24px))',
-      height:'min(520px, calc(100vh - 200px))',
-      background:'white',borderRadius:'24px',
-      boxShadow:'0 8px 40px rgba(79,70,229,0.25), 0 2px 12px rgba(0,0,0,0.12)',
-      display:'flex',flexDirection:'column',overflow:'hidden',
-      zIndex:149,animation:'chatSlideUp 0.3s cubic-bezier(0.34,1.56,0.64,1)',
-      border:'1.5px solid rgba(99,102,241,0.2)'
+      position:'fixed',inset:0,zIndex:500,
+      background:'#F4F6FB',
+      display:'flex',flexDirection:'column',
+      animation:'chatFadeIn 0.2s ease',
+      maxWidth:'480px',margin:'0 auto'
     }},
+
       /* Header */
       r('div',{style:{
         background:'linear-gradient(135deg,#4F46E5 0%,#7C3AED 100%)',
-        padding:'0.9rem 1.1rem',display:'flex',alignItems:'center',gap:'0.65rem',flexShrink:0
+        padding:'0.9rem 1rem 0.9rem',
+        display:'flex',alignItems:'center',gap:'0.75rem',
+        flexShrink:0,
+        paddingTop:'max(0.9rem, env(safe-area-inset-top))'
       }},
+        r('button',{
+          onClick:()=>setAiOpen(false),
+          style:{
+            background:'rgba(255,255,255,0.15)',border:'none',borderRadius:'10px',
+            color:'white',cursor:'pointer',padding:'6px 10px',fontSize:'0.85rem',
+            fontWeight:700,flexShrink:0,display:'flex',alignItems:'center',gap:'4px'
+          }
+        },
+          r('svg',{width:16,height:16,viewBox:'0 0 24 24',fill:'none',stroke:'white',strokeWidth:2.5,strokeLinecap:'round'},
+            r('polyline',{points:'15 18 9 12 15 6'})
+          )
+        ),
         r('div',{style:{
           width:'36px',height:'36px',borderRadius:'50%',
           background:'rgba(255,255,255,0.2)',
-          display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.2rem',flexShrink:0
-        }},'🧞‍♀️'),
-        r('div',{style:{flex:1,minWidth:0}},
-          r('div',{style:{fontWeight:700,fontSize:'0.9rem',color:'white'}},'Jimikki AI'),
-          r('div',{style:{fontSize:'0.62rem',color:'rgba(255,255,255,0.7)',marginTop:'1px'}},
-            aiLoading?'✨ Thinking…':'● Online — Ask me anything about your money'
+          display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0
+        }},
+          r('svg',{width:18,height:18,viewBox:'0 0 24 24',fill:'white'},
+            r('path',{d:'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z'})
           )
         ),
-        r('button',{
-          onClick:()=>setAiOpen(false),
-          style:{background:'rgba(255,255,255,0.15)',border:'none',borderRadius:'8px',
-            color:'white',cursor:'pointer',padding:'4px 8px',fontSize:'0.78rem',fontWeight:700,flexShrink:0}
-        },'✕')
+        r('div',{style:{flex:1,minWidth:0}},
+          r('div',{style:{fontWeight:700,fontSize:'0.95rem',color:'white',letterSpacing:'-0.2px'}},'Jimikki AI'),
+          r('div',{style:{fontSize:'0.65rem',color:'rgba(255,255,255,0.72)',marginTop:'2px'}},
+            aiLoading?'✦ Thinking…':'● Ready to help with your finances'
+          )
+        )
       ),
 
-      /* Messages area */
-      r('div',{style:{flex:1,overflowY:'auto',padding:'1rem',display:'flex',flexDirection:'column',gap:'0.75rem'}},
+      /* Messages */
+      r('div',{style:{
+        flex:1,overflowY:'auto',padding:'1rem',
+        display:'flex',flexDirection:'column',gap:'0.85rem'
+      }},
+        /* Quick chips — only show on first load */
+        aiMessages.length===1&&r('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px',marginBottom:'0.5rem'}},
+          ...['💰 Total wealth?','📊 Top spending?','📅 Monthly savings?','↕️ Income vs spending'].map(q=>{
+            const clean=q.replace(/^[^\s]+\s/,'');
+            return r('button',{key:q,
+              onClick:()=>{
+                const msg=clean;
+                setAiMessages(h=>[...h,{role:'user',content:msg}]);
+                setAiLoading(true);
+                fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
+                  body:JSON.stringify({message:msg,history:aiMessages,userData:{holders,transactions:txns,expBuckets,incBuckets}})
+                }).then(r=>r.json()).then(d=>setAiMessages(h=>[...h,{role:'assistant',content:d.reply||d.error||'Sorry!'}]))
+                  .catch(()=>setAiMessages(h=>[...h,{role:'assistant',content:'⚠️ Network error. Try again.'}]))
+                  .finally(()=>setAiLoading(false));
+              },
+              style:{
+                padding:'8px 14px',borderRadius:'999px',
+                border:`1.5px solid ${C.accent}25`,
+                background:'white',color:C.accent,cursor:'pointer',
+                fontSize:'0.75rem',fontWeight:600,
+                boxShadow:'0 1px 4px rgba(0,0,0,0.06)'
+              }
+            },q);
+          })
+        ),
+
         ...aiMessages.map((m,i)=>r('div',{key:i,style:{
-          display:'flex',justifyContent:m.role==='user'?'flex-end':'flex-start',
-          animation:'chatBubbleIn 0.25s ease'
+          display:'flex',
+          justifyContent:m.role==='user'?'flex-end':'flex-start',
+          animation:'chatBubbleIn 0.2s ease'
         }},
           r('div',{style:{
-            maxWidth:'85%',padding:'0.65rem 0.9rem',
-            borderRadius:m.role==='user'?'18px 18px 4px 18px':'18px 18px 18px 4px',
-            background:m.role==='user'?'linear-gradient(135deg,#4F46E5,#7C3AED)':'#F4F6FB',
+            maxWidth:'82%',
+            padding:'0.75rem 1rem',
+            borderRadius:m.role==='user'?'20px 20px 5px 20px':'20px 20px 20px 5px',
+            background:m.role==='user'?'linear-gradient(135deg,#4F46E5,#7C3AED)':'white',
             color:m.role==='user'?'white':C.text,
-            fontSize:'0.82rem',lineHeight:'1.5',fontWeight:400,
-            boxShadow:m.role==='user'?'0 2px 8px rgba(79,70,229,0.3)':'0 1px 4px rgba(0,0,0,0.06)',
+            fontSize:'0.85rem',lineHeight:'1.55',
+            boxShadow:m.role==='user'?'0 3px 12px rgba(79,70,229,0.3)':'0 1px 6px rgba(0,0,0,0.07)',
             border:m.role==='user'?'none':'1px solid #E8ECF4',
             whiteSpace:'pre-wrap',wordBreak:'break-word'
           }},m.content)
         )),
+
+        /* Typing indicator */
         aiLoading&&r('div',{style:{display:'flex',justifyContent:'flex-start'}},
           r('div',{style:{
-            padding:'0.75rem 1rem',borderRadius:'18px 18px 18px 4px',
-            background:'#F4F6FB',border:'1px solid #E8ECF4',display:'flex',gap:'5px',alignItems:'center'
+            padding:'0.8rem 1.1rem',borderRadius:'20px 20px 20px 5px',
+            background:'white',border:'1px solid #E8ECF4',
+            display:'flex',gap:'5px',alignItems:'center',
+            boxShadow:'0 1px 6px rgba(0,0,0,0.07)'
           }},
             ...[0,1,2].map(i=>r('span',{key:i,style:{
-              width:'7px',height:'7px',borderRadius:'50%',background:C.accent,display:'inline-block',
-              animation:`typingDot 1.2s ease-in-out ${i*0.2}s infinite`
+              width:'8px',height:'8px',borderRadius:'50%',
+              background:C.accent,display:'inline-block',
+              animation:`typingDot 1.2s ease-in-out ${i*0.18}s infinite`
             }}))
           )
         ),
+
         r('div',{ref:aiEndRef})
       ),
 
-      /* Quick suggestion chips */
-      aiMessages.length===1&&r('div',{style:{padding:'0 0.85rem 0.6rem',display:'flex',gap:'6px',flexWrap:'wrap',flexShrink:0}},
-        ...['Total wealth?','Top spending category?','Monthly savings?','Compare income vs spending'].map(q=>
-          r('button',{key:q,onClick:()=>{setAiInput(q);setTimeout(()=>aiInputRef.current&&aiInputRef.current.form&&aiInputRef.current.form.requestSubmit(),0);setAiInput('');
-            setAiMessages(h=>[...h,{role:'user',content:q}]);
-            setAiLoading(true);
-            fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:q,history:aiMessages,userData:{holders,transactions:txns,expBuckets,incBuckets}})})
-              .then(r=>r.json()).then(d=>setAiMessages(h=>[...h,{role:'assistant',content:d.reply||d.error||'Sorry!'}])).catch(()=>setAiMessages(h=>[...h,{role:'assistant',content:'⚠️ Error. Check AI binding.'}])).finally(()=>setAiLoading(false));
-          },
-          style:{
-            padding:'5px 11px',borderRadius:'999px',border:`1.5px solid ${C.accent}30`,
-            background:'#EEF2FF',color:C.accent,cursor:'pointer',fontSize:'0.67rem',fontWeight:600
-          }},q)
-        )
-      ),
-
       /* Input bar */
-      r('div',{style:{padding:'0.75rem',borderTop:'1px solid #E8ECF4',display:'flex',gap:'8px',background:'white',flexShrink:0}},
+      r('div',{style:{
+        padding:'0.75rem 0.85rem',
+        paddingBottom:'max(0.75rem, env(safe-area-inset-bottom))',
+        borderTop:'1px solid #E8ECF4',
+        display:'flex',gap:'10px',alignItems:'flex-end',
+        background:'white',flexShrink:0
+      }},
         r('input',{
           ref:aiInputRef,
           value:aiInput,
           onChange:ev=>setAiInput(ev.target.value),
           onKeyDown:ev=>{if(ev.key==='Enter'&&!ev.shiftKey){ev.preventDefault();sendAiMessage();}},
-          placeholder:'Ask about your finances…',
+          placeholder:'Ask anything about your money…',
           style:{
-            flex:1,border:'1.5px solid #E8ECF4',borderRadius:'12px',
-            padding:'0.6rem 0.85rem',fontSize:'0.82rem',outline:'none',
+            flex:1,border:'1.5px solid #E8ECF4',borderRadius:'14px',
+            padding:'0.7rem 1rem',fontSize:'0.88rem',outline:'none',
             background:'#F4F6FB',fontFamily:'inherit',color:C.text,
-            transition:'border-color 0.2s'
+            transition:'border-color 0.2s',lineHeight:'1.4'
           },
           onFocus:ev=>ev.target.style.borderColor=C.accent,
           onBlur:ev=>ev.target.style.borderColor='#E8ECF4'
@@ -730,14 +776,21 @@ const [nhBal,setNhBal]=useState('');
           onClick:sendAiMessage,
           disabled:!aiInput.trim()||aiLoading,
           style:{
-            width:'40px',height:'40px',borderRadius:'12px',border:'none',
+            width:'44px',height:'44px',borderRadius:'14px',border:'none',flexShrink:0,
             background:(!aiInput.trim()||aiLoading)?'#E8ECF4':'linear-gradient(135deg,#4F46E5,#7C3AED)',
-            color:(!aiInput.trim()||aiLoading)?C.muted:'white',
             cursor:(!aiInput.trim()||aiLoading)?'not-allowed':'pointer',
-            display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,
-            transition:'all 0.2s',fontSize:'1rem'
+            display:'flex',alignItems:'center',justifyContent:'center',
+            transition:'all 0.2s',
+            boxShadow:(!aiInput.trim()||aiLoading)?'none':'0 3px 10px rgba(79,70,229,0.35)'
           }
-        },'➤')
+        },
+          r('svg',{width:18,height:18,viewBox:'0 0 24 24',fill:'none',
+            stroke:(!aiInput.trim()||aiLoading)?C.muted:'white',
+            strokeWidth:2.5,strokeLinecap:'round',strokeLinejoin:'round'},
+            r('line',{x1:22,y1:2,x2:11,y2:13}),
+            r('polygon',{points:'22 2 15 22 11 13 2 9 22 2'})
+          )
+        )
       )
     ),
 
