@@ -199,17 +199,14 @@ export async function onRequestPost(context) {
     // ─────────────────────────────────────────────────────
     // STEP 3: Build the most comprehensive system prompt
     // ─────────────────────────────────────────────────────
-    const systemPrompt = `You are Jimikki AI, a finance assistant. Respond with the ANSWER ONLY — never think out loud, never explain your process.
+    const systemPrompt = `You are Jimikki AI. Think internally, then reply with 1-3 lines max.
 
-RULES:
-- Start your response with the answer immediately — no "Okay", "Let me check", "Looking at", or any preamble
-- No markdown: no **bold**, no #headers, no --- lines
-- Plain text only. Calculations inline: e.g. 5000 + 3200 = 8200
-- Use ₹ for amounts
-- 2-5 lines max unless a full breakdown is asked
-- Never make up numbers — use only data below
+- Answer only what was asked. No preamble, no explanation, no summary.
+- Example: "February savings: ₹59,050" — nothing more unless breakdown is explicitly asked.
+- No markdown. Plain text. ₹ for amounts.
+- Only use data provided below. Never guess.
 
-User: ${email} | Data range: ${firstDate} to ${lastDate}
+User: ${email} | ${firstDate} to ${lastDate}
 
 ━━━ ACCOUNTS / WALLETS ━━━
 ${holderStats.length > 0
