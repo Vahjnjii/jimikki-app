@@ -28,32 +28,6 @@ const {useState,useEffect,useRef}=React;
 const r=React.createElement;
 
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-
-// ── AI message formatter: strips think tags, converts markdown to clean HTML ──
-function formatAIMessage(raw){
-  if(!raw) return '';
-  // Strip <think>...</think> blocks (reasoning models leak these)
-  let text = raw.replace(/<think>[\s\S]*?<\/think>/gi,'').trim();
-  // Escape HTML entities first
-  text = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  // Headers: #### ## # → bold large text
-  text = text.replace(/^#{1,6}\s+(.+)$/gm,'<strong style="display:block;font-size:0.95rem;margin:8px 0 4px">$1</strong>');
-  // Bold **text**
-  text = text.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
-  // Italic *text*
-  text = text.replace(/\*(.+?)\*/g,'<em>$1</em>');
-  // Inline code `text`
-  text = text.replace(/`([^`]+)`/g,'<code style="background:#F0F1FF;border-radius:3px;padding:1px 5px;font-size:0.82rem">$1</code>');
-  // Bullet lines starting with - or •
-  text = text.replace(/^[\-•]\s+(.+)$/gm,'<div style="padding-left:12px;margin:2px 0">• $1</div>');
-  // Numbered list
-  text = text.replace(/^\d+\.\s+(.+)$/gm,'<div style="padding-left:12px;margin:2px 0">$1</div>');
-  // Double newline = paragraph break
-  text = text.replace(/\n\n+/g,'<br/><br/>');
-  // Single newline
-  text = text.replace(/\n/g,'<br/>');
-  return text;
-}
 const fmt=n=>`₹${(+n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 const fmtS=n=>{const v=+n||0;if(v>=100000)return`₹${(v/100000).toFixed(1)}L`;if(v>=1000)return`₹${(v/1000).toFixed(1)}K`;return`₹${v.toFixed(0)}`;};
 const todayStr=()=>new Date().toISOString().slice(0,10);
@@ -643,11 +617,11 @@ const [nhBal,setNhBal]=useState('');
       title:'Ask Jimikki AI',
       style:{
         position:'fixed',bottom:'80px',right:'16px',
-        width:'60px',height:'60px',borderRadius:'50%',border:'none',cursor:'pointer',
+        width:'48px',height:'48px',borderRadius:'50%',border:'none',cursor:'pointer',
         background:'linear-gradient(135deg,#4F46E5,#7C3AED)',
         display:'flex',alignItems:'center',justifyContent:'center',
-        boxShadow:'0 6px 24px rgba(79,70,229,0.55)',
-        animation:'aiBtnPulse 2.5s ease-in-out infinite',
+        boxShadow:'0 4px 16px rgba(79,70,229,0.45)',
+        animation:'aiBtnPulse 3s ease-in-out infinite',
         zIndex:150,transition:'transform 0.15s'
       }
     },
@@ -738,7 +712,7 @@ const [nhBal,setNhBal]=useState('');
           justifyContent:m.role==='user'?'flex-end':'flex-start',
           animation:'chatBubbleIn 0.2s ease'
         }},
-          r('div',Object.assign({},{style:{
+          r('div',{style:{
             maxWidth:'82%',
             padding:'0.75rem 1rem',
             borderRadius:m.role==='user'?'20px 20px 5px 20px':'20px 20px 20px 5px',
@@ -747,9 +721,8 @@ const [nhBal,setNhBal]=useState('');
             fontSize:'0.85rem',lineHeight:'1.55',
             boxShadow:m.role==='user'?'0 3px 12px rgba(79,70,229,0.3)':'0 1px 6px rgba(0,0,0,0.07)',
             border:m.role==='user'?'none':'1px solid #E8ECF4',
-            wordBreak:'break-word'
-          }},m.role==='assistant'?{dangerouslySetInnerHTML:{__html:formatAIMessage(m.content)}}:{}),
-          m.role==='user'?m.content:undefined)
+            whiteSpace:'pre-wrap',wordBreak:'break-word'
+          }},m.content)
         )),
 
         /* Typing indicator */
