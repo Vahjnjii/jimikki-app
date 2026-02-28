@@ -20,11 +20,8 @@ async function getEmail(request, env) {
 
 export async function onRequest(context) {
   const url = new URL(context.request.url);
-
-  // Allow auth routes AND debug route through without login check
   if (url.pathname.startsWith('/api/auth/')) return context.next();
-  if (url.pathname === '/api/debug') return context.next(); // ← allow debug
-
+  if (url.pathname === '/api/debug') return context.next();
   const email = await getEmail(context.request, context.env);
   if (!email) return new Response(JSON.stringify({ error: 'unauthenticated' }), {
     status: 401, headers: { 'Content-Type': 'application/json' }
