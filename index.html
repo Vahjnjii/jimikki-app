@@ -63,7 +63,7 @@ function formatAIMessage(raw){
   return text;
 }
 const fmt=n=>`₹${(+n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-const fmtS=n=>{const v=+n||0;if(v>=100000)return`₹${(v/100000).toFixed(1)}L`;if(v>=1000)return`₹${(v/1000).toFixed(1)}K`;return`₹${v.toFixed(0)}`;};
+const fmtS=n=>{const v=+n||0;const abs=Math.abs(v);const sign=v<0?'-':'';if(abs>=100000)return`${sign}₹${(abs/100000).toFixed(1)}L`;if(abs>=1000)return`${sign}₹${(abs/1000).toFixed(1)}K`;return`${sign}₹${abs.toFixed(0)}`;};
 const todayStr=()=>new Date().toISOString().slice(0,10);
 const PALETTE=['#6366F1','#F43F5E','#F97316','#22C55E','#06B6D4','#A855F7','#FBBF24','#EC4899'];
 const OE='__exp_other__',OI='__inc_other__';
@@ -124,7 +124,7 @@ function buildBalanceData(txns,holders,fH,gran){
   function balAt(ds){const after=base.filter(t=>t.date>ds);return Math.max(0,curBal-after.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0)+after.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0));}
   if(gran==='week')return Array.from({length:7},(_,i)=>{const d=new Date(now);d.setDate(d.getDate()-(6-i));const k=d.toISOString().slice(0,10);return{name:d.toLocaleDateString('en',{weekday:'short'}),Value:balAt(k),date:k,gran:'week'};});
   if(gran==='month'){const yr=now.getFullYear();return Array.from({length:12},(_,i)=>{const mo=new Date(yr,i,1);const last=new Date(yr,i+1,0);const k=last.toISOString().slice(0,10);return{name:mo.toLocaleDateString('en',{month:'short'}),Value:balAt(k),date:k,gran:'month'};});}
-  if(gran==='year'){const yr=now.getFullYear();return Array.from({length:12},(_,i)=>{const last=new Date(yr,i+1,0);const k=last.toISOString().slice(0,10);return{name:last.toLocaleDateString('en',{month:'short'}),Value:balAt(k),date:k,gran:'year'};});}
+  if(gran==='year'){const txnYears=[...new Set(txns.filter(t=>t.date).map(t=>+t.date.slice(0,4)))].filter(y=>!isNaN(y)&&y>2000).sort();const startYr=txnYears.length>0?txnYears[0]:now.getFullYear();const allYrs=[];for(let y=startYr;y<=now.getFullYear();y++)allYrs.push(y);return allYrs.map(yr=>({name:String(yr),Value:balAt(`${yr}-12-31`),date:`${yr}-12-31`,gran:'5year',year:yr}));}
   const txnYears=[...new Set(txns.filter(t=>t.date).map(t=>+t.date.slice(0,4)))].filter(y=>!isNaN(y)&&y>2000).sort();const startYr=txnYears.length>0?txnYears[0]:now.getFullYear();const allYrs=[];for(let y=startYr;y<=now.getFullYear();y++)allYrs.push(y);return allYrs.map(yr=>({name:String(yr),Value:balAt(`${yr}-12-31`),date:`${yr}-12-31`,gran:'5year',year:yr}));
 }
 function buildNetData(txns,fH){
@@ -375,7 +375,7 @@ function Card({children,style={}}){return r('div',{style:{background:C.card,bord
 function SL({children,req}){return r('div',{style:{fontSize:'0.62rem',fontWeight:700,color:C.muted,letterSpacing:'0.09em',marginBottom:'5px',display:'flex',gap:'3px'}},children,req&&r('span',{style:{color:C.red}},'*'));}
 function FI({style={},...p}){return r('input',{...p,style:{width:'100%',background:C.bg,border:`1.5px solid ${C.border}`,borderRadius:'12px',padding:'0.6rem 0.85rem',color:C.text,fontSize:'0.9rem',outline:'none',boxSizing:'border-box',...style}});}
 function FS({children,style={},...p}){return r('select',{...p,style:{width:'100%',background:C.bg,border:`1.5px solid ${C.border}`,borderRadius:'12px',padding:'0.6rem 0.85rem',color:C.text,fontSize:'0.88rem',outline:'none',boxSizing:'border-box',...style}},children);}
-function GranPills({value,onChange}){return r('div',{style:{display:'flex',gap:'4px',flexWrap:'wrap'}},...[['week','Weekly'],['month','Monthly'],['year','Yearly'],['5year','All Yrs']].map(([v,l])=>r('button',{key:v,onClick:()=>onChange(v),style:{padding:'4px 10px',borderRadius:'999px',border:`1px solid ${value===v?C.accent:C.border}`,background:value===v?C.accent:'white',color:value===v?'white':C.sub,cursor:'pointer',fontSize:'0.68rem',fontWeight:700}},l)));}
+function GranPills({value,onChange}){return r('div',{style:{display:'flex',gap:'4px',flexWrap:'wrap'}},...[['week','Weekly'],['month','Monthly'],['year','Yearly']].map(([v,l])=>r('button',{key:v,onClick:()=>onChange(v),style:{padding:'4px 10px',borderRadius:'999px',border:`1px solid ${value===v?C.accent:C.border}`,background:value===v?C.accent:'white',color:value===v?'white':C.sub,cursor:'pointer',fontSize:'0.68rem',fontWeight:700}},l)));}
 
 function Jimikki(){
   const [view,setView]=useState('home');
@@ -425,6 +425,7 @@ function Jimikki(){
   const aiInputRef=useRef(null);
   const [nhName,setNhName]=useState('');
 const [nhBal,setNhBal]=useState('');
+  const [hhAdd,setHhAdd]=useState(false);
   const [nbExpName,setNbExpName]=useState('');const [nbExpColor,setNbExpColor]=useState(PALETTE[0]);
   const [nbIncName,setNbIncName]=useState('');const [nbIncColor,setNbIncColor]=useState(PALETTE[3]);
 
@@ -513,7 +514,7 @@ const [nhBal,setNhBal]=useState('');
   function getStats(list){
     const inc=list.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
     const spd=list.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0);
-    return{inc,spd,net:Math.max(0,inc-spd)};
+    return{inc,spd,net:inc-spd};
   }
 
   function triggerShake(){setShakeActive(false);requestAnimationFrame(()=>requestAnimationFrame(()=>{setShakeActive(true);setTimeout(()=>setShakeActive(false),600);}));}
@@ -961,7 +962,7 @@ const [nhBal,setNhBal]=useState('');
               r('div',{style:{width:'1px',flexShrink:0,background:'rgba(255,255,255,0.15)'}}),
               r('div',{style:{flex:1,minWidth:0}},r('div',{style:{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}},'OUT'),r('div',{style:{fontSize:'0.95rem',fontWeight:700,color:'#FCA5A5',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},wealthHidden?'••••':fmtS(hStats.spd))),
               r('div',{style:{width:'1px',flexShrink:0,background:'rgba(255,255,255,0.15)'}}),
-              r('div',{style:{flex:1,minWidth:0}},r('div',{style:{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}},'NET'),r('div',{style:{fontSize:'0.95rem',fontWeight:700,color:'white',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},wealthHidden?'••••':fmtS(hStats.net)))
+              r('div',{style:{flex:1,minWidth:0}},r('div',{style:{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}},'NET'),r('div',{style:{fontSize:'0.95rem',fontWeight:700,color:hStats.net<0?'#FCA5A5':'white',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},wealthHidden?'••••':fmtS(hStats.net)))
             )
           )
         ),
@@ -976,13 +977,30 @@ const [nhBal,setNhBal]=useState('');
           r(BalanceAreaChart,{data:hBalData,height:200,onExplore:handleExplore})
         ),
         actH.length>0
-          ?r(Card,null,r('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'0.85rem'}},'Your Holdings'),
+          ?r(Card,null,
+            r('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.85rem'}},
+              r('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text}},'Your Holdings'),
+              r('button',{onClick:()=>setHhAdd(v=>!v),style:{display:'flex',alignItems:'center',gap:'4px',padding:'4px 10px',borderRadius:'999px',border:`1px solid ${C.accent}`,background:C.accentBg,color:C.accent,cursor:'pointer',fontSize:'0.72rem',fontWeight:700}},hhAdd?'✕ Cancel':'+ Add')
+            ),
+            hhAdd&&r('div',{style:{display:'flex',gap:'6px',marginBottom:'0.85rem'}},
+              r(FI,{value:nhName,onChange:ev=>setNhName(ev.target.value),placeholder:'Name',style:{flex:2,minWidth:0}}),
+              r(FI,{value:nhBal,onChange:ev=>setNhBal(ev.target.value),placeholder:'₹ Balance',type:'number',min:'0',style:{flex:1,minWidth:0}}),
+              r('button',{onClick:()=>{addHolder();setHhAdd(false);},style:{background:C.accent,color:'white',border:'none',borderRadius:'12px',padding:'0.5rem 0.85rem',cursor:'pointer',fontWeight:700,flexShrink:0}},'Add')
+            ),
             ...actH.map((x,i)=>r('div',{key:x.id,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'0.65rem 0',borderBottom:i<actH.length-1?`1px solid ${C.border}`:'none'}},
               r('div',{style:{display:'flex',alignItems:'center',gap:'0.75rem'}},r('div',{style:{width:'38px',height:'38px',borderRadius:'12px',background:x.isPrimary?C.accentBg:C.bg,border:`1.5px solid ${x.isPrimary?C.accent:C.border}`,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:'0.92rem',color:x.isPrimary?C.accent:C.sub}},x.name.charAt(0).toUpperCase()),r('div',null,r('div',{style:{fontWeight:600,fontSize:'0.88rem',color:C.text}},x.name),x.isPrimary&&r('div',{style:{fontSize:'0.6rem',color:C.accent,marginTop:'1px'}},'Primary'))),
               r('div',{style:{fontWeight:800,fontSize:'0.98rem',color:C.text}},fmt(x.balance))
             ))
           )
-          :r('div',{style:{background:'white',borderRadius:'20px',padding:'2.5rem 1.5rem',textAlign:'center',border:`1.5px dashed ${C.border}`}},r('div',{style:{fontSize:'2rem',marginBottom:'0.75rem'}},'💳'),r('div',{style:{fontWeight:700,color:C.text,marginBottom:'0.4rem'}},'No holdings yet'),r('div',{style:{fontSize:'0.78rem',color:C.sub}},'Open ☰ to add your first money holder'))
+          :r('div',{style:{background:'white',borderRadius:'20px',padding:'2.5rem 1.5rem',textAlign:'center',border:`1.5px dashed ${C.border}`}},
+            r('div',{style:{fontSize:'2rem',marginBottom:'0.75rem'}},'💳'),
+            r('div',{style:{fontWeight:700,color:C.text,marginBottom:'0.75rem'}},'No holdings yet'),
+            r('div',{style:{display:'flex',gap:'6px',justifyContent:'center'}},
+              r(FI,{value:nhName,onChange:ev=>setNhName(ev.target.value),placeholder:'Name',style:{flex:2,maxWidth:'130px'}}),
+              r(FI,{value:nhBal,onChange:ev=>setNhBal(ev.target.value),placeholder:'₹',type:'number',min:'0',style:{flex:1,maxWidth:'80px'}}),
+              r('button',{onClick:addHolder,style:{background:C.accent,color:'white',border:'none',borderRadius:'12px',padding:'0.5rem 0.85rem',cursor:'pointer',fontWeight:700}},'Add')
+            )
+          )
       ),
 
       view==='analytics'&&r('div',{style:{display:'flex',flexDirection:'column',gap:'1rem'}},
