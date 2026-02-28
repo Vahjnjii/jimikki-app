@@ -1,5 +1,3 @@
-import { syncToSheets } from './sheets-sync.js';
-
 export async function onRequestGet(context) {
   const email = context.data.email;
   try {
@@ -7,13 +5,12 @@ export async function onRequestGet(context) {
       'SELECT data FROM user_data WHERE email = ?'
     ).bind(email).first();
 
-    // Also get their sheet URL if exists
     let sheetUrl = null;
     try {
-      const sheetRow = await context.env.DB.prepare(
-        'SELECT sheet_id FROM user_sheets WHERE email = ?'
+      const sr = await context.env.DB.prepare(
+        'SELECT sheet_url FROM user_sheets WHERE email = ?'
       ).bind(email).first();
-      if (sheetRow) sheetUrl = `https://docs.google.com/spreadsheets/d/${sheetRow.sheet_id}`;
+      if (sr) sheetUrl = sr.sheet_url;
     } catch {}
 
     if (!row) return new Response(JSON.stringify({
@@ -40,13 +37,30 @@ export async function onRequestPost(context) {
       'INSERT OR REPLACE INTO user_data (email, data, updated_at) VALUES (?, ?, datetime("now"))'
     ).bind(email, body).run();
 
-    // Sync to Google Sheets (non-blocking — don't fail if sheets errors)
-    const sheetResult = await syncToSheets(context.env, email, userData, context.env.DB);
+    // Sync to Google Sheets via Apps Script
+    let sheetUrl = null;
+    const scriptUrl = context.env.GOOGLE_SCRIPT_URL;
 
-    return new Response(JSON.stringify({
-      ok: true,
-      sheetUrl: sheetResult?.url || null
-    }), { headers: { 'Content-Type': 'application/json' } });
+    if (scriptUrl) {
+      try {
+        const res = await fetch(scriptUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, ...userData })
+        });
+        const result = await res.json();
+        if (result.ok && result.url) {
+          sheetUrl = result.url;
+          await context.env.DB.prepare(
+            'INSERT OR REPLACE INTO user_sheets (email, sheet_url, updated_at) VALUES (?, ?, datetime("now"))'
+          ).bind(email, sheetUrl).run();
+        }
+      } catch {}
+    }
+
+    return new Response(JSON.stringify({ ok: true, sheetUrl }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
 
   } catch {
     return new Response('Server error', { status: 500 });
