@@ -4,6 +4,26 @@
 // Uses @cf/qwen/qwq-32b — best reasoning model on Cloudflare Workers AI.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Strips reasoning preamble that models sometimes output as plain text
+function cleanReply(text) {
+  if (!text) return text;
+  // If model wrote thinking lines before the actual answer, find where answer starts.
+  // Look for a clear answer line after reasoning lines like "Okay, ...", "Let me...", "Looking at..."
+  const lines = text.split('\n');
+  let answerStart = 0;
+  const thinkPatterns = /^(okay|alright|let me|looking at|checking|i need to|so the|the user|wait|hmm|first|now|since|given|from the|based on|according|we can|this means|note that|also|actually|thinking|to answer|to find|let's|i see|i'll)/i;
+  for (let i = 0; i < lines.length; i++) {
+    if (thinkPatterns.test(lines[i].trim())) {
+      answerStart = i + 1;
+    } else if (lines[i].trim().length > 0) {
+      break;
+    }
+  }
+  // If we skipped some lines, use from answerStart; else keep original
+  const cleaned = lines.slice(answerStart).join('\n').trim();
+  return cleaned.length > 20 ? cleaned : text.trim();
+}
+
 export async function onRequestPost(context) {
   // Email is set by _middleware.js from the authenticated session cookie
   const email = context.data?.email;
@@ -179,15 +199,15 @@ export async function onRequestPost(context) {
     // ─────────────────────────────────────────────────────
     // STEP 3: Build the most comprehensive system prompt
     // ─────────────────────────────────────────────────────
-    const systemPrompt = `You are Jimikki AI, a finance assistant. Answer ONLY with what is asked — short and direct.
+    const systemPrompt = `You are Jimikki AI, a finance assistant. Respond with the ANSWER ONLY — never think out loud, never explain your process.
 
 RULES:
-- No markdown: no **bold**, no #headers, no --- lines, no bullet dashes
-- Show calculations as plain text: e.g. 5000 + 3200 = 8200
+- Start your response with the answer immediately — no "Okay", "Let me check", "Looking at", or any preamble
+- No markdown: no **bold**, no #headers, no --- lines
+- Plain text only. Calculations inline: e.g. 5000 + 3200 = 8200
 - Use ₹ for amounts
-- For date queries, find every transaction on that exact date and list them plainly
-- Never make up numbers
 - 2-5 lines max unless a full breakdown is asked
+- Never make up numbers — use only data below
 
 User: ${email} | Data range: ${firstDate} to ${lastDate}
 
@@ -300,8 +320,9 @@ END OF DATABASE — You have the complete picture. Think carefully, calculate pr
         max_tokens: 2048
       });
       reply = res.response || res?.choices?.[0]?.message?.content || '';
-      // Remove internal <think> reasoning tags — show only the final answer
+      // Remove <think> tags and any plain-text reasoning preamble
       reply = reply.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+      reply = cleanReply(reply);
     } catch (e1) {
       console.warn('QwQ-32B failed, trying DeepSeek-R1:', e1.message);
       // Fallback: DeepSeek R1 Distill 32B
@@ -312,6 +333,7 @@ END OF DATABASE — You have the complete picture. Think carefully, calculate pr
         });
         reply = res2.response || res2?.choices?.[0]?.message?.content || '';
         reply = reply.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+        reply = cleanReply(reply);
       } catch (e2) {
         console.warn('DeepSeek-R1 failed, trying Llama 3.3 70B:', e2.message);
         // Final fallback: Llama 3.3 70B
