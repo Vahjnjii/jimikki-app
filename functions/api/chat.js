@@ -320,8 +320,8 @@ END OF DATABASE — You have the complete picture. Think carefully, calculate pr
         max_tokens: 2048
       });
       reply = res.response || res?.choices?.[0]?.message?.content || '';
-      // Remove <think> tags and any plain-text reasoning preamble
-      reply = reply.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+      // Remove <think>...</think> blocks, orphaned </think>, and </THINK> variants
+      reply = reply.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<\/think>/gi, '').trim();
       reply = cleanReply(reply);
     } catch (e1) {
       console.warn('QwQ-32B failed, trying DeepSeek-R1:', e1.message);
@@ -332,7 +332,7 @@ END OF DATABASE — You have the complete picture. Think carefully, calculate pr
           max_tokens: 2048
         });
         reply = res2.response || res2?.choices?.[0]?.message?.content || '';
-        reply = reply.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+        reply = reply.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<\/think>/gi, '').trim();
         reply = cleanReply(reply);
       } catch (e2) {
         console.warn('DeepSeek-R1 failed, trying Llama 3.3 70B:', e2.message);
