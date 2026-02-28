@@ -12,6 +12,10 @@ body{background:#F4F6FB;font-family:'Inter',system-ui,sans-serif;color:#1A1D2E;m
 input,select,button{font-family:inherit}
 input[type=date]{color-scheme:light}
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:#E8ECF4;border-radius:4px}
+@keyframes jimShake{0%,100%{transform:translateX(0)}12%{transform:translateX(-9px)}25%{transform:translateX(9px)}37%{transform:translateX(-7px)}50%{transform:translateX(7px)}62%{transform:translateX(-4px)}75%{transform:translateX(4px)}87%{transform:translateX(-2px)}}
+@keyframes jimSuccessPop{0%{transform:scale(0.55) translateY(20px);opacity:0}55%{transform:scale(1.06) translateY(-4px);opacity:1}75%{transform:scale(0.97)}100%{transform:scale(1) translateY(0);opacity:1}}
+@keyframes jimCheckDraw{0%{stroke-dashoffset:40}100%{stroke-dashoffset:0}}
+@keyframes jimRipple{0%{transform:scale(0.8);opacity:0.6}100%{transform:scale(2.2);opacity:0}}
 </style>
 </head>
 <body><div id="root"></div>
@@ -370,7 +374,11 @@ function Jimikki(){
   const [aFilterOpen,setAFilterOpen]=useState(false);
   const [aView,setAView]=useState('flow');
 
-  const [nhName,setNhName]=useState('');const [nhBal,setNhBal]=useState('');
+  const [successFlash,setSuccessFlash]=useState(null);
+  const [shakeActive,setShakeActive]=useState(false);
+  const [wealthHidden,setWealthHidden]=useState(true);
+  const [binOpen,setBinOpen]=useState(false);
+const [nhBal,setNhBal]=useState('');
   const [nbExpName,setNbExpName]=useState('');const [nbExpColor,setNbExpColor]=useState(PALETTE[0]);
   const [nbIncName,setNbIncName]=useState('');const [nbIncColor,setNbIncColor]=useState(PALETTE[3]);
 
@@ -425,34 +433,47 @@ function Jimikki(){
     return{inc,spd,net:Math.max(0,inc-spd)};
   }
 
-  function openFab(mode){setFabMode(mode);setJAmt('');setJNote('');setJExpB('');setJIncB('');setJDate(todayStr());setJFrom(actH.find(x=>x.isPrimary)?.id||actH[0]?.id||'');setJTo('');}
+  function triggerShake(){setShakeActive(false);requestAnimationFrame(()=>requestAnimationFrame(()=>{setShakeActive(true);setTimeout(()=>setShakeActive(false),600);}));}
+  function err(msg){triggerShake();pop(msg);}
+
+  function openFab(mode){setFabMode(mode);setSuccessFlash(null);setShakeActive(false);setJAmt('');setJNote('');setJExpB('');setJIncB('');setJDate(todayStr());setJFrom(actH.find(x=>x.isPrimary)?.id||actH[0]?.id||'');setJTo('');}
+
+  function showSuccess(type,amount){
+    const cfg={
+      income:{icon:'✓',label:'Income Added!',sub:'Great, keep it up!',col:'#059669',bg:'#ECFDF5',ring:'#6EE7B7'},
+      spending:{icon:'✓',label:'Expense Recorded!',sub:'Tracked successfully',col:'#059669',bg:'#ECFDF5',ring:'#6EE7B7'},
+      swap:{icon:'✓',label:'Transfer Done!',sub:'Funds moved safely',col:'#059669',bg:'#ECFDF5',ring:'#6EE7B7'},
+    };
+    setSuccessFlash({...cfg[type]||cfg.income,amount,type});
+    setTimeout(()=>{setSuccessFlash(null);setFabOpen(false);setFabMode(null);},2000);
+  }
 
   function submitTxn(){
     const amt=parseFloat(jAmt);
-    if(!amt||amt<=0)return pop('Enter a valid amount');
+    if(!amt||amt<=0)return err('Enter a valid amount');
     const from=holders.find(x=>x.id===jFrom);
-    if(!from)return pop('Select a holder');
+    if(!from)return err('Select a holder');
     if(fabMode==='swap'){
-      if(!jTo||jTo===jFrom)return pop('Select a different destination');
-      if(!jNote.trim())return pop('Note is required for transfers');
-      if(from.balance<amt)return pop('Insufficient balance');
+      if(!jTo||jTo===jFrom)return err('Select a different destination');
+      if(!jNote.trim())return err('Note is required for transfers');
+      if(from.balance<amt)return err('Insufficient balance');
       setTxns(ts=>[{id:uid(),type:'swap',amount:amt,note:jNote.trim(),holderId:jFrom,toHolderId:jTo,date:jDate,deleted:false},...ts]);
       setHolders(hs=>hs.map(x=>{if(x.id===jFrom)return{...x,balance:x.balance-amt};if(x.id===jTo)return{...x,balance:x.balance+amt};return x;}));
-      setFabOpen(false);setFabMode(null);pop('Transfer recorded ✓');return;
+      showSuccess('swap',amt);return;
     }
     if(fabMode==='income'){
-      if(!jIncB)return pop('Select an income source');
-      if(jIncB===OI&&amt>=1000&&!jNote.trim())return pop('Note required for "Other" when ≥ ₹1,000');
+      if(!jIncB)return err('Select an income source');
+      if(jIncB===OI&&amt>=1000&&!jNote.trim())return err('Note required for "Other" when ≥ ₹1,000');
       setTxns(ts=>[{id:uid(),type:'income',amount:amt,note:jNote.trim(),incBucketId:jIncB,holderId:jFrom,date:jDate,deleted:false},...ts]);
       setHolders(hs=>hs.map(x=>x.id===jFrom?{...x,balance:x.balance+amt}:x));
     }else{
-      if(!jExpB)return pop('Select a spending category');
-      if(jExpB===OE&&amt>=1000&&!jNote.trim())return pop('Note required for "Other" when ≥ ₹1,000');
-      if(from.balance<amt)return pop('Insufficient balance');
+      if(!jExpB)return err('Select a spending category');
+      if(jExpB===OE&&amt>=1000&&!jNote.trim())return err('Note required for "Other" when ≥ ₹1,000');
+      if(from.balance<amt)return err('Insufficient balance');
       setTxns(ts=>[{id:uid(),type:'spending',amount:amt,note:jNote.trim(),bucketId:jExpB,holderId:jFrom,date:jDate,deleted:false},...ts]);
       setHolders(hs=>hs.map(x=>x.id===jFrom?{...x,balance:x.balance-amt}:x));
     }
-    setFabOpen(false);setFabMode(null);pop('Entry added ✓');
+    showSuccess(fabMode,amt);
   }
 
   const isOther=(fabMode==='income'&&jIncB===OI)||(fabMode==='spending'&&jExpB===OE);
@@ -545,7 +566,22 @@ function Jimikki(){
       r('div',{style:{position:'absolute',inset:0,background:'rgba(15,18,40,0.5)',backdropFilter:'blur(6px)'},onClick:()=>{setFabOpen(false);setFabMode(null);}}),
       r('div',{style:{position:'relative',background:'white',borderRadius:'28px 28px 0 0',padding:'1.25rem 1.25rem 7rem',maxWidth:'480px',width:'100%',margin:'0 auto',boxShadow:'0 -8px 40px rgba(0,0,0,0.12)',maxHeight:'90vh',overflowY:'auto'}},
         r('div',{style:{width:'36px',height:'4px',borderRadius:'2px',background:C.border,margin:'0 auto 1.25rem'}}),
-        !fabMode
+        successFlash
+          ?r('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'2.5rem 1rem 3rem',animation:'jimSuccessPop 0.45s cubic-bezier(0.34,1.56,0.64,1)'}},
+            r('div',{style:{position:'relative',width:'96px',height:'96px',marginBottom:'1.5rem'}},
+              r('div',{style:{position:'absolute',inset:0,borderRadius:'50%',background:successFlash.ring,animation:'jimRipple 1.2s ease-out infinite'}}),
+              r('div',{style:{position:'relative',width:'96px',height:'96px',borderRadius:'50%',background:successFlash.bg,border:`3px solid ${successFlash.ring}`,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:`0 12px 40px ${successFlash.col}40`}},
+                r('svg',{width:44,height:44,viewBox:'0 0 44 44',fill:'none'},
+                  r('circle',{cx:22,cy:22,r:20,stroke:successFlash.col,strokeWidth:2.5,fill:'none',opacity:0.25}),
+                  r('path',{d:'M12 22.5 L19.5 30 L32 15',stroke:successFlash.col,strokeWidth:3.5,strokeLinecap:'round',strokeLinejoin:'round',fill:'none',strokeDasharray:40,strokeDashoffset:0,style:{animation:'jimCheckDraw 0.45s ease 0.1s both'}})
+                )
+              )
+            ),
+            r('div',{style:{fontWeight:800,fontSize:'1.4rem',color:C.text,marginBottom:'0.3rem'}},successFlash.label),
+            r('div',{style:{fontWeight:800,fontSize:'2.1rem',color:successFlash.col,letterSpacing:'-1.5px',marginBottom:'0.3rem'}},fmt(successFlash.amount)),
+            r('div',{style:{fontSize:'0.75rem',color:C.muted}},successFlash.sub)
+          )
+          :!fabMode
           ?r('div',null,
             r('div',{style:{fontWeight:800,fontSize:'1.1rem',color:C.text,marginBottom:'0.35rem'}},'New Entry'),
             r('div',{style:{fontSize:'0.73rem',color:C.sub,marginBottom:'1.25rem'}},'Choose what to record'),
@@ -555,7 +591,7 @@ function Jimikki(){
               )
             )
           )
-          :r('div',null,
+          :r('div',{style:{animation:shakeActive?'jimShake 0.55s ease':'none'}},
             r('div',{style:{display:'flex',alignItems:'center',gap:'0.65rem',marginBottom:'1.1rem'}},
               r('button',{onClick:()=>setFabMode(null),style:{background:C.bg,border:`1px solid ${C.border}`,borderRadius:'10px',padding:'0.35rem 0.7rem',cursor:'pointer',fontSize:'0.8rem',color:C.sub}},'← Back'),
               r('span',{style:{fontWeight:700,fontSize:'0.95rem',color:fabMode==='income'?C.green:fabMode==='spending'?C.red:C.blue}},fabMode==='income'?'⬇️ Income':fabMode==='spending'?'⬆️ Spending':'↔️ Transfer')
@@ -643,15 +679,25 @@ function Jimikki(){
           r('div',{style:{position:'absolute',bottom:'-40px',left:'10px',width:'90px',height:'90px',borderRadius:'50%',background:'rgba(255,255,255,0.05)'}}),
           r('div',{style:{position:'relative'}},
             r('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'0.5rem',flexWrap:'wrap'}},
-              r('div',null,r('div',{style:{fontSize:'0.58rem',fontWeight:700,color:'rgba(255,255,255,0.5)',letterSpacing:'0.12em',marginBottom:'4px'}},'CONSOLIDATED WEALTH'),r('div',{style:{fontSize:'2.4rem',fontWeight:800,color:'white',letterSpacing:'-2px',lineHeight:1.1}},fmt(wealth(hHFilter)))),
+              r('div',null,
+                r('div',{style:{display:'flex',alignItems:'center',gap:'6px',marginBottom:'4px'}},
+                  r('div',{style:{fontSize:'0.58rem',fontWeight:700,color:'rgba(255,255,255,0.5)',letterSpacing:'0.12em'}},'CONSOLIDATED WEALTH'),
+                  r('button',{onClick:()=>setWealthHidden(v=>!v),style:{background:'none',border:'none',cursor:'pointer',padding:'1px 3px',opacity:0.7,lineHeight:1,flexShrink:0}},
+                    wealthHidden
+                      ?r('svg',{width:14,height:14,viewBox:'0 0 24 24',fill:'none',stroke:'rgba(255,255,255,0.7)',strokeWidth:2,strokeLinecap:'round'},r('path',{d:'M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19'}),r('line',{x1:1,y1:1,x2:23,y2:23}))
+                      :r('svg',{width:14,height:14,viewBox:'0 0 24 24',fill:'none',stroke:'rgba(255,255,255,0.7)',strokeWidth:2,strokeLinecap:'round'},r('path',{d:'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z'}),r('circle',{cx:12,cy:12,r:3}))
+                  )
+                ),
+                r('div',{style:{fontSize:'2.4rem',fontWeight:800,color:'white',letterSpacing:'-2px',lineHeight:1.1}},wealthHidden?'₹ ••••••':fmt(wealth(hHFilter)))
+              ),
               r('button',{onClick:()=>setHFilterOpen(true),style:{display:'flex',alignItems:'center',gap:'5px',padding:'5px 10px',borderRadius:'999px',background:'rgba(255,255,255,0.2)',border:'1px solid rgba(255,255,255,0.3)',color:'white',cursor:'pointer',fontSize:'0.68rem',fontWeight:700,whiteSpace:'nowrap'}},'🗓 ',filterLabel(hFilter))
             ),
             r('div',{style:{display:'flex',gap:'0.5rem',marginTop:'1.1rem',minWidth:0}},
-              r('div',{style:{flex:1,minWidth:0}},r('div',{style:{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}},'IN'),r('div',{style:{fontSize:'0.95rem',fontWeight:700,color:'#A7F3D0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},fmtS(hStats.inc))),
+              r('div',{style:{flex:1,minWidth:0}},r('div',{style:{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}},'IN'),r('div',{style:{fontSize:'0.95rem',fontWeight:700,color:'#A7F3D0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},wealthHidden?'••••':fmtS(hStats.inc))),
               r('div',{style:{width:'1px',flexShrink:0,background:'rgba(255,255,255,0.15)'}}),
-              r('div',{style:{flex:1,minWidth:0}},r('div',{style:{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}},'OUT'),r('div',{style:{fontSize:'0.95rem',fontWeight:700,color:'#FCA5A5',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},fmtS(hStats.spd))),
+              r('div',{style:{flex:1,minWidth:0}},r('div',{style:{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}},'OUT'),r('div',{style:{fontSize:'0.95rem',fontWeight:700,color:'#FCA5A5',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},wealthHidden?'••••':fmtS(hStats.spd))),
               r('div',{style:{width:'1px',flexShrink:0,background:'rgba(255,255,255,0.15)'}}),
-              r('div',{style:{flex:1,minWidth:0}},r('div',{style:{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}},'NET'),r('div',{style:{fontSize:'0.95rem',fontWeight:700,color:'white',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},fmtS(hStats.net)))
+              r('div',{style:{flex:1,minWidth:0}},r('div',{style:{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}},'NET'),r('div',{style:{fontSize:'0.95rem',fontWeight:700,color:'white',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},wealthHidden?'••••':fmtS(hStats.net)))
             )
           )
         ),
@@ -709,8 +755,13 @@ function Jimikki(){
           r('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'0.75rem'}},'Transactions ',r('span',{style:{fontWeight:400,color:C.muted,fontSize:'0.72rem'}},`(${aFilteredT.length})`)),
           aFilteredT.length===0?r('div',{style:{color:C.muted,fontSize:'0.82rem',textAlign:'center',padding:'2rem 0'}},'No transactions for this period'):aFilteredT.map(t=>r(TxnRow,{key:t.id,t,onDel:()=>setPendingDelId(t.id)})),
           delT.length>0&&r('div',{style:{marginTop:'1.25rem'}},
-            r('div',{style:{display:'flex',alignItems:'center',gap:'6px',marginBottom:'0.6rem'}},r('span',{style:{fontSize:'1rem'}},'🗑️'),r('span',{style:{fontWeight:700,fontSize:'0.82rem',color:C.text}},'Recycle Bin'),r('span',{style:{fontWeight:400,color:C.muted,fontSize:'0.72rem'}},`(${delT.length})`)),
-            r('div',{style:{background:'#FFFBEB',borderRadius:'14px',padding:'0.75rem 0.85rem',border:'1px solid #FDE68A'}},...delT.map(t=>r(TxnRow,{key:t.id,t,onRest:()=>restTxn(t.id)})))
+            r('button',{onClick:()=>setBinOpen(o=>!o),style:{display:'flex',alignItems:'center',gap:'6px',width:'100%',padding:'0.55rem 0.85rem',borderRadius:'12px',border:`1px solid ${binOpen?'#FDE68A':C.border}`,background:binOpen?'#FFFBEB':C.bg,cursor:'pointer',textAlign:'left'}},
+              r('span',{style:{fontSize:'0.95rem'}},'🗑️'),
+              r('span',{style:{fontWeight:700,fontSize:'0.82rem',color:C.text}},'Recycle Bin'),
+              r('span',{style:{fontWeight:400,color:C.muted,fontSize:'0.72rem',marginLeft:'2px'}},`(${delT.length})`),
+              r('span',{style:{marginLeft:'auto',color:C.muted,fontSize:'0.75rem',fontWeight:700}},binOpen?'▲ Hide':'▼ Show')
+            ),
+            binOpen&&r('div',{style:{background:'#FFFBEB',borderRadius:'14px',padding:'0.75rem 0.85rem',border:'1px solid #FDE68A',marginTop:'0.45rem'}},...delT.map(t=>r(TxnRow,{key:t.id,t,onRest:()=>restTxn(t.id)})))
           )
         )
       )
