@@ -155,6 +155,124 @@ function GoogleLogo(){
   );
 }
 
+// ── Simple hash for PIN storage ──
+async function hashPin(pin){
+  const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(pin+'jimikki'));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+function PinDots({count,total=4}){
+  return r('div',{style:{display:'flex',gap:'16px',justifyContent:'center',margin:'1.5rem 0'}},
+    Array.from({length:total},(_,i)=>r('div',{key:i,style:{
+      width:'18px',height:'18px',borderRadius:'50%',
+      background:i<count?'#4F46E5':'transparent',
+      border:'2.5px solid',borderColor:i<count?'#4F46E5':'rgba(255,255,255,0.4)',
+      transition:'all 0.15s'
+    }}))
+  );
+}
+
+function PinPad({onDigit,onDelete}){
+  const btn=(label,fn,col)=>r('button',{onClick:fn,style:{
+    width:'72px',height:'72px',borderRadius:'50%',border:'none',
+    background:col||'rgba(255,255,255,0.15)',
+    color:'white',fontSize:label==='⌫'?'1.4rem':'1.5rem',
+    fontWeight:700,cursor:'pointer',display:'flex',
+    alignItems:'center',justifyContent:'center',
+    backdropFilter:'blur(4px)',transition:'transform 0.1s, background 0.1s',
+    WebkitTapHighlightColor:'transparent'
+  },onTouchStart:e=>{e.currentTarget.style.background='rgba(255,255,255,0.3)';e.currentTarget.style.transform='scale(0.93)'},
+    onTouchEnd:e=>{e.currentTarget.style.background=col||'rgba(255,255,255,0.15)';e.currentTarget.style.transform='scale(1)'}
+  },label);
+  return r('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,72px)',gap:'16px',justifyContent:'center'}},
+    ...[1,2,3,4,5,6,7,8,9].map(n=>btn(String(n),()=>onDigit(String(n)))),
+    r('div'),
+    btn('0',()=>onDigit('0')),
+    btn('⌫',onDelete,'rgba(255,255,255,0.08)')
+  );
+}
+
+function SetPinScreen({onDone}){
+  const [step,setStep]=useState('set'); // set | confirm
+  const [pin,setPin]=useState('');
+  const [first,setFirst]=useState('');
+  const [err,setErr]=useState('');
+  const [shake,setShake]=useState(false);
+
+  function doShake(){setShake(true);setTimeout(()=>setShake(false),500);}
+
+  function onDigit(d){
+    if(pin.length>=4)return;
+    const next=pin+d;
+    setPin(next);
+    setErr('');
+    if(next.length===4){
+      if(step==='set'){
+        setTimeout(()=>{setFirst(next);setPin('');setStep('confirm');},120);
+      } else {
+        if(next===first){
+          hashPin(next).then(h=>onDone(h));
+        } else {
+          doShake();
+          setTimeout(()=>{setPin('');setErr('PINs do not match. Try again.');setStep('set');setFirst('');},400);
+        }
+      }
+    }
+  }
+  function onDel(){setPin(p=>p.slice(0,-1));setErr('');}
+
+  return r('div',{style:{minHeight:'100vh',background:'linear-gradient(135deg,#312E81 0%,#4338CA 40%,#6366F1 100%)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'1.5rem'}},
+    r('div',{style:{textAlign:'center',marginBottom:'1rem'}},
+      r('div',{style:{fontFamily:'cursive',fontSize:'2.2rem',color:'white',letterSpacing:'-1px'}},'Jimikki'),
+    ),
+    r('div',{style:{background:'rgba(255,255,255,0.1)',backdropFilter:'blur(12px)',borderRadius:'28px',padding:'2rem 1.5rem',width:'100%',maxWidth:'320px',textAlign:'center',border:'1px solid rgba(255,255,255,0.2)'}},
+      r('div',{style:{fontSize:'1.5rem',marginBottom:'0.4rem'}},'🔐'),
+      r('div',{style:{fontWeight:800,fontSize:'1.05rem',color:'white',marginBottom:'0.25rem'}},step==='set'?'Set your PIN':'Confirm your PIN'),
+      r('div',{style:{fontSize:'0.75rem',color:'rgba(255,255,255,0.6)',marginBottom:'0.5rem'}},step==='set'?'Choose a 4-digit PIN to protect your data':'Enter the same PIN again'),
+      err&&r('div',{style:{fontSize:'0.75rem',color:'#FCA5A5',marginBottom:'0.25rem'}},err),
+      r('div',{style:{animation:shake?'jimShake 0.45s ease':'none'}},r(PinDots,{count:pin.length})),
+      r(PinPad,{onDigit,onDelete:onDel})
+    )
+  );
+}
+
+function EnterPinScreen({onUnlock,email}){
+  const [pin,setPin]=useState('');
+  const [err,setErr]=useState('');
+  const [shake,setShake]=useState(false);
+  const [attempts,setAttempts]=useState(0);
+
+  function doShake(){setShake(true);setTimeout(()=>setShake(false),500);}
+
+  function onDigit(d){
+    if(pin.length>=4)return;
+    const next=pin+d;
+    setPin(next);
+    if(next.length===4){
+      hashPin(next).then(h=>onUnlock(h,()=>{
+        doShake();
+        setAttempts(a=>a+1);
+        setTimeout(()=>{setPin('');setErr('Wrong PIN. Try again.');},400);
+      }));
+    }
+  }
+  function onDel(){setPin(p=>p.slice(0,-1));setErr('');}
+
+  return r('div',{style:{minHeight:'100vh',background:'linear-gradient(135deg,#312E81 0%,#4338CA 40%,#6366F1 100%)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'1.5rem'}},
+    r('div',{style:{textAlign:'center',marginBottom:'1rem'}},
+      r('div',{style:{fontFamily:'cursive',fontSize:'2.2rem',color:'white',letterSpacing:'-1px'}},'Jimikki'),
+    ),
+    r('div',{style:{background:'rgba(255,255,255,0.1)',backdropFilter:'blur(12px)',borderRadius:'28px',padding:'2rem 1.5rem',width:'100%',maxWidth:'320px',textAlign:'center',border:'1px solid rgba(255,255,255,0.2)'}},
+      r('div',{style:{fontSize:'1.5rem',marginBottom:'0.4rem'}},'🔒'),
+      r('div',{style:{fontWeight:800,fontSize:'1.05rem',color:'white',marginBottom:'0.25rem'}},'Enter PIN'),
+      r('div',{style:{fontSize:'0.72rem',color:'rgba(255,255,255,0.55)',marginBottom:'0.5rem',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},email),
+      err&&r('div',{style:{fontSize:'0.75rem',color:'#FCA5A5',marginBottom:'0.25rem'}},err),
+      r('div',{style:{animation:shake?'jimShake 0.45s ease':'none'}},r(PinDots,{count:pin.length})),
+      r(PinPad,{onDigit,onDelete:onDel})
+    )
+  );
+}
+
 function LoginScreen(){
   return r('div',{style:{minHeight:'100vh',background:'linear-gradient(135deg,#312E81 0%,#4338CA 40%,#6366F1 100%)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'1.5rem',position:'relative',overflow:'hidden'}},
     r('div',{style:{position:'absolute',top:'-80px',right:'-60px',width:'300px',height:'300px',borderRadius:'50%',background:'rgba(255,255,255,0.05)'}}),
@@ -386,6 +504,8 @@ function Jimikki(){
   const [incBuckets,setIncBuckets]=useState(DEF_INC);
   const [loaded,setLoaded]=useState(false);
   const [loggedIn,setLoggedIn]=useState(null);
+  const [pinHash,setPinHash]=useState(null);   // stored hash from DB
+  const [pinUnlocked,setPinUnlocked]=useState(false); // session unlock
   const [userEmail,setUserEmail]=useState('');
   const [sheetUrl,setSheetUrl]=useState('');  // ← NEW
   const [toast,setToast]=useState('');
@@ -458,6 +578,7 @@ const [nhBal,setNhBal]=useState('');
         setIncBuckets(d.incBuckets||DEF_INC);
         if(d.email)setUserEmail(d.email);
         if(d.sheetUrl)setSheetUrl(d.sheetUrl); // ← NEW
+        if(d.pinHash)setPinHash(d.pinHash);
         setLoggedIn(true);
         setLoaded(true);
       })
@@ -466,11 +587,11 @@ const [nhBal,setNhBal]=useState('');
 
   useEffect(()=>{
     if(!loaded||!loggedIn)return;
-    fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({holders,transactions:txns,expBuckets,incBuckets})})
+    fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({holders,transactions:txns,expBuckets,incBuckets,pinHash})})
       .then(r=>r.json())
       .then(d=>{ if(d.sheetUrl)setSheetUrl(d.sheetUrl); }) // ← NEW
       .catch(()=>{});
-  },[holders,txns,expBuckets,incBuckets,loaded,loggedIn]);
+  },[holders,txns,expBuckets,incBuckets,pinHash,loaded,loggedIn]);
 
   // AI Chat: auto-scroll to bottom
   useEffect(()=>{
@@ -638,6 +759,12 @@ const [nhBal,setNhBal]=useState('');
   );
 
   if(loggedIn===false)return r(LoginScreen,null);
+
+  // Logged in but no PIN set yet → force PIN setup
+  if(loggedIn&&loaded&&!pinHash)return r(SetPinScreen,{onDone:h=>{setPinHash(h);setPinUnlocked(true);}});
+
+  // PIN set but not unlocked this session → show PIN entry
+  if(loggedIn&&loaded&&pinHash&&!pinUnlocked)return r(EnterPinScreen,{email:userEmail,onUnlock:(h,onFail)=>{if(h===pinHash){setPinUnlocked(true);}else{onFail();}}});
 
   return r('div',{style:{minHeight:'100vh',background:C.bg,maxWidth:'480px',margin:'0 auto',fontFamily:'"Inter",system-ui,sans-serif',color:C.text}},
 
@@ -889,7 +1016,10 @@ const [nhBal,setNhBal]=useState('');
             r('div',{style:{fontSize:'0.58rem',fontWeight:700,color:C.muted,letterSpacing:'0.08em'}},'SIGNED IN AS'),
             r('div',{style:{fontSize:'0.72rem',fontWeight:600,color:C.accent,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},userEmail)
           ),
-          r('a',{href:'/api/auth/logout',style:{fontSize:'0.65rem',color:C.red,fontWeight:700,textDecoration:'none',background:C.redBg,padding:'4px 10px',borderRadius:'6px',whiteSpace:'nowrap',flexShrink:0}},'Sign out')
+          r('div',{style:{display:'flex',gap:'6px',flexShrink:0}},
+            r('button',{onClick:()=>{setSidebar(false);setPinHash(null);setPinUnlocked(false);},style:{fontSize:'0.65rem',color:C.accent,fontWeight:700,border:`1px solid ${C.accent}`,background:'white',padding:'4px 10px',borderRadius:'6px',whiteSpace:'nowrap',cursor:'pointer'}},'Change PIN'),
+            r('a',{href:'/api/auth/logout',style:{fontSize:'0.65rem',color:C.red,fontWeight:700,textDecoration:'none',background:C.redBg,padding:'4px 10px',borderRadius:'6px',whiteSpace:'nowrap'}},'Sign out')
+          )
         ),
 
         /* ── GOOGLE SHEET BUTTON ── */
