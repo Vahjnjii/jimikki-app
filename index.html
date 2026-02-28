@@ -793,6 +793,9 @@ const [nhBal,setNhBal]=useState('');
       r('button',{onClick:()=>setAiOpen(true),style:{display:'flex',alignItems:'center',gap:'10px',padding:'0.7rem 1rem',borderRadius:'14px',border:'none',background:'linear-gradient(135deg,#4F46E5,#7C3AED)',color:'white',cursor:'pointer',fontWeight:600,fontSize:'0.9rem',marginTop:'0.5rem',width:'100%'}},
         r('span',{style:{fontSize:'1.1rem'}},'✦'), 'Ask AI'
       ),
+      r('button',{onClick:()=>setSidebar(true),style:{display:'flex',alignItems:'center',gap:'10px',padding:'0.7rem 1rem',borderRadius:'14px',border:`1px solid ${C.border}`,background:'white',color:C.sub,cursor:'pointer',fontWeight:500,fontSize:'0.9rem',width:'100%',marginTop:'0.25rem'}},
+        r('span',{style:{fontSize:'1.1rem'}},'⚙️'), 'Settings'
+      ),
       r('div',{style:{flex:1}}),
       userEmail&&r('div',{style:{fontSize:'0.7rem',color:C.muted,padding:'0.5rem',borderRadius:'10px',background:C.bg,wordBreak:'break-all'}},userEmail),
       r('button',{onClick:()=>{setSidebar(false);setPinHash(null);setPinUnlocked(false);},style:{display:'flex',alignItems:'center',gap:'8px',padding:'0.6rem 1rem',borderRadius:'12px',border:`1px solid ${C.accent}`,background:'white',color:C.accent,cursor:'pointer',fontSize:'0.78rem',fontWeight:700,width:'100%',marginTop:'0.35rem'}},'🔑 Change PIN'),
