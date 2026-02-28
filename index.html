@@ -384,7 +384,7 @@ function Jimikki(){
   const [binOpen,setBinOpen]=useState(false);
   // ── AI CHAT STATE ──
   const [aiOpen,setAiOpen]=useState(false);
-  const [aiMessages,setAiMessages]=useState([{role:'assistant',content:'Hi! 👋 I\'m your Jimikki AI assistant. I can analyze your finances, compare spending, calculate savings, and answer anything about your money data. What would you like to know?'}]);
+  const [aiMessages,setAiMessages]=useState([{role:'assistant',content:'Hi! 👋 I\'m Jimikki AI — I have your complete financial database and can answer anything. Ask me about any transaction, any date, totals, comparisons, trends — everything!'}]);
   const [aiInput,setAiInput]=useState('');
   const [aiLoading,setAiLoading]=useState(false);
   const aiEndRef=useRef(null);
@@ -460,20 +460,15 @@ const [nhBal,setNhBal]=useState('');
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({
           message:msg,
-          history:newHistory.slice(-10),
-          userData:{
-            holders,
-            transactions:txns, // ALL transactions, no limit
-            expBuckets,
-            incBuckets
-          }
+          history:newHistory.slice(-10)
+          // NOTE: No userData needed — chat.js reads directly from D1 database
         })
       });
       const data=await res.json();
       const reply=data.reply||data.error||'Sorry, something went wrong.';
       setAiMessages(h=>[...h,{role:'assistant',content:reply}]);
     }catch(e){
-      setAiMessages(h=>[...h,{role:'assistant',content:'⚠️ Could not reach AI. Check your Cloudflare Workers AI binding.'}]);
+      setAiMessages(h=>[...h,{role:'assistant',content:'⚠️ Could not reach AI. Check your Workers AI binding in Cloudflare.'}]);
     }finally{
       setAiLoading(false);
     }
@@ -696,7 +691,7 @@ const [nhBal,setNhBal]=useState('');
                 setAiMessages(h=>[...h,{role:'user',content:msg}]);
                 setAiLoading(true);
                 fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
-                  body:JSON.stringify({message:msg,history:aiMessages,userData:{holders,transactions:txns,expBuckets,incBuckets}})
+                  body:JSON.stringify({message:msg,history:aiMessages})
                 }).then(r=>r.json()).then(d=>setAiMessages(h=>[...h,{role:'assistant',content:d.reply||d.error||'Sorry!'}]))
                   .catch(()=>setAiMessages(h=>[...h,{role:'assistant',content:'⚠️ Network error. Try again.'}]))
                   .finally(()=>setAiLoading(false));
