@@ -1,0 +1,1321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Jimikki</title>
+<link rel="manifest" href="/manifest.json"/>
+<meta name="theme-color" content="#4F46E5"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Jimikki"/>
+<link rel="apple-touch-icon" href="/icon-180.png"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:#F4F6FB;font-family:'Inter',system-ui,sans-serif;color:#1A1D2E;min-height:100vh}
+input,select,button{font-family:inherit}
+input[type=date]{color-scheme:light}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:#E8ECF4;border-radius:4px}
+@keyframes jimShake{0%,100%{transform:translateX(0)}12%{transform:translateX(-9px)}25%{transform:translateX(9px)}37%{transform:translateX(-7px)}50%{transform:translateX(7px)}62%{transform:translateX(-4px)}75%{transform:translateX(4px)}87%{transform:translateX(-2px)}}
+@keyframes jimSuccessPop{0%{transform:scale(0.55) translateY(20px);opacity:0}55%{transform:scale(1.06) translateY(-4px);opacity:1}75%{transform:scale(0.97)}100%{transform:scale(1) translateY(0);opacity:1}}
+@keyframes jimCheckDraw{0%{stroke-dashoffset:40}100%{stroke-dashoffset:0}}
+@keyframes jimRipple{0%{transform:scale(0.8);opacity:0.6}100%{transform:scale(2.2);opacity:0}}
+@keyframes chatBubbleIn{0%{transform:scale(0.9) translateY(6px);opacity:0}100%{transform:scale(1) translateY(0);opacity:1}}
+@keyframes aiBtnPulse{0%,100%{box-shadow:0 2px 12px rgba(99,102,241,0.45)}50%{box-shadow:0 2px 20px rgba(99,102,241,0.75)}}
+@keyframes aiShake{0%,72%,100%{transform:rotate(0deg)}75%{transform:rotate(-12deg)}78%{transform:rotate(12deg)}81%{transform:rotate(-10deg)}84%{transform:rotate(10deg)}87%{transform:rotate(-6deg)}90%{transform:rotate(6deg)}93%{transform:rotate(-3deg)}96%{transform:rotate(3deg)}}
+@keyframes typingDot{0%,60%,100%{transform:translateY(0);opacity:0.4}30%{transform:translateY(-5px);opacity:1}}
+@keyframes chatFadeIn{0%{opacity:0}100%{opacity:1}}
+@media(min-width:769px){
+  body{background:#ECEEF5}
+  .desktop-shell{display:grid!important;grid-template-columns:240px 1fr;min-height:100vh;max-width:1200px!important;margin:0 auto!important;background:transparent!important;}
+  .desktop-sidebar{display:flex!important;}
+  .desktop-main{background:#F4F6FB;border-radius:0;min-height:100vh;overflow-y:auto;}
+  .mobile-nav{display:none!important;}
+  .mobile-header{display:none!important;}
+  .desktop-topbar{display:flex!important;}
+  .main-content-area{padding:1.5rem 2rem!important;padding-bottom:2rem!important;max-width:900px;}
+  .ai-fab{bottom:2rem!important;right:2rem!important;}
+}
+</style>
+</head>
+<body><div id="root"></div>
+<script>
+const {useState,useEffect,useRef}=React;
+const r=React.createElement;
+
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+
+// ── AI message formatter: strips think tags, converts markdown to clean HTML ──
+function formatAIMessage(raw){
+  if(!raw) return '';
+  // Strip <think>...</think> blocks and orphaned </think> tags
+  let text = raw.replace(/<think>[\s\S]*?<\/think>/gi,'').replace(/<\/think>/gi,'').trim();
+  // Escape HTML entities first
+  text = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  // Headers: #### ## # → bold large text
+  text = text.replace(/^#{1,6}\s+(.+)$/gm,'<strong style="display:block;font-size:0.95rem;margin:8px 0 4px">$1</strong>');
+  // Bold **text**
+  text = text.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+  // Italic *text*
+  text = text.replace(/\*(.+?)\*/g,'<em>$1</em>');
+  // Inline code `text`
+  text = text.replace(/`([^`]+)`/g,'<code style="background:#F0F1FF;border-radius:3px;padding:1px 5px;font-size:0.82rem">$1</code>');
+  // Bullet lines starting with - or •
+  text = text.replace(/^[\-•]\s+(.+)$/gm,'<div style="padding-left:12px;margin:2px 0">• $1</div>');
+  // Numbered list
+  text = text.replace(/^\d+\.\s+(.+)$/gm,'<div style="padding-left:12px;margin:2px 0">$1</div>');
+  // Double newline = paragraph break
+  text = text.replace(/\n\n+/g,'<br/><br/>');
+  // Single newline
+  text = text.replace(/\n/g,'<br/>');
+  return text;
+}
+const fmt=n=>`₹${(+n||0).toLocaleString('en-IN',{minimumFractionDigits:0,maximumFractionDigits:0})}`;
+const fmtS=n=>{const v=+n||0;const abs=Math.abs(v);const sign=v<0?'-':'';if(abs>=100000)return`${sign}₹${(abs/100000).toFixed(1)}L`;if(abs>=1000)return`${sign}₹${(abs/1000).toFixed(1)}K`;return`${sign}₹${abs.toFixed(0)}`;};
+const todayStr=()=>new Date().toISOString().slice(0,10);
+const PALETTE=['#6366F1','#F43F5E','#F97316','#22C55E','#06B6D4','#A855F7','#FBBF24','#EC4899'];
+const OE='__exp_other__',OI='__inc_other__';
+const C={bg:'#F4F6FB',card:'#FFF',border:'#E8ECF4',text:'#1A1D2E',sub:'#64748B',muted:'#A0AEC0',
+  accent:'#4F46E5',green:'#10B981',red:'#F43F5E',blue:'#3B82F6',
+  accentBg:'#EEF2FF',greenBg:'#ECFDF5',redBg:'#FFF1F2'};
+
+const DEF_EXP=[
+  {id:'b1',name:'Food & Dining',color:'#F97316',deleted:false},
+  {id:'b2',name:'Shopping',color:'#A855F7',deleted:false},
+  {id:'b3',name:'Transport',color:'#06B6D4',deleted:false},
+  {id:'b4',name:'Health',color:'#22C55E',deleted:false},
+  {id:'b5',name:'Entertainment',color:'#F43F5E',deleted:false},
+  {id:'b6',name:'Utilities',color:'#6366F1',deleted:false},
+  {id:OE,name:'Other',color:'#94A3B8',deleted:false,fixed:true},
+];
+const DEF_INC=[
+  {id:'i1',name:'Salary',color:'#10B981',deleted:false},
+  {id:'i2',name:'Freelance',color:'#6366F1',deleted:false},
+  {id:'i3',name:'Business',color:'#F97316',deleted:false},
+  {id:'i4',name:'Investment',color:'#06B6D4',deleted:false},
+  {id:'i5',name:'Gift',color:'#EC4899',deleted:false},
+  {id:OI,name:'Other',color:'#94A3B8',deleted:false,fixed:true},
+];
+
+function applyFilter(txns,f){
+  if(!f||f.type==='all')return txns;
+  const now=new Date();
+  if(f.type==='week'){const w=new Date(now);w.setDate(w.getDate()-6);return txns.filter(t=>new Date(t.date)>=w);}
+  if(f.type==='month'){const d=new Date(now.getFullYear(),now.getMonth(),1);return txns.filter(t=>new Date(t.date)>=d);}
+  if(f.type==='quarter'){const d=new Date(now);d.setMonth(d.getMonth()-2);d.setDate(1);return txns.filter(t=>new Date(t.date)>=d);}
+  if(f.type==='year')return txns.filter(t=>t.date.startsWith(String(now.getFullYear())));
+  if(f.type==='custom'&&f.from&&f.to){const a=new Date(f.from),b=new Date(f.to);b.setHours(23,59,59);return txns.filter(t=>{const d=new Date(t.date);return d>=a&&d<=b;});}
+  if(f.type==='custom'&&f.from)return txns.filter(t=>new Date(t.date)>=new Date(f.from));
+  if(f.type==='yearmonth'&&f.ym)return txns.filter(t=>t.date.slice(0,7)===f.ym);
+  return txns;
+}
+function filterLabel(f){
+  if(!f||f.type==='all')return'All Time';
+  if(f.type==='week')return'This Week';
+  if(f.type==='month')return'This Month';
+  if(f.type==='quarter')return'Last 3 Mo';
+  if(f.type==='year')return'This Year';
+  if(f.type==='yearmonth'&&f.ym){const[y,m]=f.ym.split('-');return new Date(+y,+m-1,1).toLocaleDateString('en',{month:'long',year:'numeric'});}
+  if(f.type==='custom'){
+    const a=f.from?new Date(f.from).toLocaleDateString('en',{day:'numeric',month:'short'}):'';
+    const b=f.to?new Date(f.to).toLocaleDateString('en',{day:'numeric',month:'short'}):'';
+    if(a&&b)return`${a}–${b}`;if(a)return`From ${a}`;return'Custom';
+  }
+  return'—';
+}
+
+function buildBalanceData(txns,holders,fH,gran){
+  const actH=holders.filter(h=>!h.deleted);
+  const curBal=fH?actH.filter(h=>h.id===fH).reduce((s,h)=>s+h.balance,0):actH.reduce((s,h)=>s+h.balance,0);
+  const base=txns.filter(t=>t.type!=='swap'&&(!fH||t.holderId===fH));
+  const now=new Date();
+  function balAt(ds){const after=base.filter(t=>t.date>ds);return Math.max(0,curBal-after.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0)+after.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0));}
+  if(gran==='week')return Array.from({length:7},(_,i)=>{const d=new Date(now);d.setDate(d.getDate()-(6-i));const k=d.toISOString().slice(0,10);return{name:d.toLocaleDateString('en',{weekday:'short'}),Value:balAt(k),date:k,gran:'week'};});
+  if(gran==='month'){const yr=now.getFullYear();return Array.from({length:12},(_,i)=>{const mo=new Date(yr,i,1);const last=new Date(yr,i+1,0);const k=last.toISOString().slice(0,10);return{name:mo.toLocaleDateString('en',{month:'short'}),Value:balAt(k),date:k,gran:'month'};});}
+  if(gran==='year'){const txnYears=[...new Set(txns.filter(t=>t.date).map(t=>+t.date.slice(0,4)))].filter(y=>!isNaN(y)&&y>2000).sort();const startYr=txnYears.length>0?txnYears[0]:now.getFullYear();const allYrs=[];for(let y=startYr;y<=now.getFullYear();y++)allYrs.push(y);return allYrs.map(yr=>({name:String(yr),Value:balAt(`${yr}-12-31`),date:`${yr}-12-31`,gran:'5year',year:yr}));}
+  const txnYears=[...new Set(txns.filter(t=>t.date).map(t=>+t.date.slice(0,4)))].filter(y=>!isNaN(y)&&y>2000).sort();const startYr=txnYears.length>0?txnYears[0]:now.getFullYear();const allYrs=[];for(let y=startYr;y<=now.getFullYear();y++)allYrs.push(y);return allYrs.map(yr=>({name:String(yr),Value:balAt(`${yr}-12-31`),date:`${yr}-12-31`,gran:'5year',year:yr}));
+}
+function buildNetData(txns,fH){
+  const base=txns.filter(t=>t.type!=='swap'&&(!fH||t.holderId===fH));
+  const now=new Date();
+  return Array.from({length:12},(_,i)=>{
+    const d=new Date(now.getFullYear(),now.getMonth()-11+i,1);
+    const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const mo=base.filter(t=>t.date.slice(0,7)===k);
+    const inc=mo.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+    const spd=mo.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0);
+    return{name:d.toLocaleDateString('en',{month:'short'}),Value:Math.max(0,inc-spd),inc,spd};
+  });
+}
+function makeExploreFilter(pt){
+  if(pt.gran==='week')return{type:'custom',from:pt.date,to:pt.date};
+  if(pt.gran==='month'||pt.gran==='year')return{type:'yearmonth',ym:pt.date.slice(0,7)};
+  if(pt.gran==='5year')return{type:'custom',from:`${pt.year}-01-01`,to:`${pt.year}-12-31`};
+  return{type:'all'};
+}
+
+function GoogleLogo(){
+  return r('svg',{width:20,height:20,viewBox:'0 0 48 48'},
+    r('path',{fill:'#EA4335',d:'M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z'}),
+    r('path',{fill:'#4285F4',d:'M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z'}),
+    r('path',{fill:'#FBBC05',d:'M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z'}),
+    r('path',{fill:'#34A853',d:'M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z'})
+  );
+}
+
+// ── Format a sync timestamp for the sidebar status box ──
+function formatSyncTime(iso){
+  if(!iso)return null;
+  try{
+    const d=new Date(iso);
+    if(isNaN(d.getTime()))return null;
+    const now=new Date();
+    const sameDay=d.toDateString()===now.toDateString();
+    const time=d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+    return sameDay ? `Today, ${time}` : `${d.toLocaleDateString([],{day:'numeric',month:'short'})}, ${time}`;
+  }catch{return null;}
+}
+
+// ── Simple hash for PIN storage ──
+async function hashPin(pin){
+  const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(pin+'jimikki'));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+function PinDots({count,total=4}){
+  return r('div',{style:{display:'flex',gap:'16px',justifyContent:'center',margin:'1.5rem 0'}},
+    Array.from({length:total},(_,i)=>r('div',{key:i,style:{
+      width:'18px',height:'18px',borderRadius:'50%',
+      background:i<count?'#4F46E5':'transparent',
+      border:'2.5px solid',borderColor:i<count?'#4F46E5':'rgba(255,255,255,0.4)',
+      transition:'all 0.15s'
+    }}))
+  );
+}
+
+function PinPad({onDigit,onDelete}){
+  const btn=(label,fn,col)=>r('button',{onClick:fn,style:{
+    width:'72px',height:'72px',borderRadius:'50%',border:'none',
+    background:col||'rgba(255,255,255,0.15)',
+    color:'white',fontSize:label==='⌫'?'1.4rem':'1.5rem',
+    fontWeight:700,cursor:'pointer',display:'flex',
+    alignItems:'center',justifyContent:'center',
+    backdropFilter:'blur(4px)',transition:'transform 0.1s, background 0.1s',
+    WebkitTapHighlightColor:'transparent'
+  },onTouchStart:e=>{e.currentTarget.style.background='rgba(255,255,255,0.3)';e.currentTarget.style.transform='scale(0.93)'},
+    onTouchEnd:e=>{e.currentTarget.style.background=col||'rgba(255,255,255,0.15)';e.currentTarget.style.transform='scale(1)'}
+  },label);
+  return r('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,72px)',gap:'16px',justifyContent:'center'}},
+    ...[1,2,3,4,5,6,7,8,9].map(n=>btn(String(n),()=>onDigit(String(n)))),
+    r('div'),
+    btn('0',()=>onDigit('0')),
+    btn('⌫',onDelete,'rgba(255,255,255,0.08)')
+  );
+}
+
+function SetPinScreen({onDone}){
+  const [step,setStep]=useState('set'); // set | confirm
+  const [pin,setPin]=useState('');
+  const [first,setFirst]=useState('');
+  const [err,setErr]=useState('');
+  const [shake,setShake]=useState(false);
+
+  function doShake(){setShake(true);setTimeout(()=>setShake(false),500);}
+
+  function onDigit(d){
+    if(pin.length>=4)return;
+    const next=pin+d;
+    setPin(next);
+    setErr('');
+    if(next.length===4){
+      if(step==='set'){
+        setTimeout(()=>{setFirst(next);setPin('');setStep('confirm');},120);
+      } else {
+        if(next===first){
+          hashPin(next).then(h=>onDone(h));
+        } else {
+          doShake();
+          setTimeout(()=>{setPin('');setErr('PINs do not match. Try again.');setStep('set');setFirst('');},400);
+        }
+      }
+    }
+  }
+  function onDel(){setPin(p=>p.slice(0,-1));setErr('');}
+
+  return r('div',{style:{minHeight:'100vh',background:'linear-gradient(135deg,#312E81 0%,#4338CA 40%,#6366F1 100%)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'1.5rem'}},
+    r('div',{style:{textAlign:'center',marginBottom:'1rem'}},
+      r('div',{style:{fontFamily:'cursive',fontSize:'2.2rem',color:'white',letterSpacing:'-1px'}},'Jimikki'),
+    ),
+    r('div',{style:{background:'rgba(255,255,255,0.1)',backdropFilter:'blur(12px)',borderRadius:'28px',padding:'2rem 1.5rem',width:'100%',maxWidth:'320px',textAlign:'center',border:'1px solid rgba(255,255,255,0.2)'}},
+      r('div',{style:{fontSize:'1.5rem',marginBottom:'0.4rem'}},'🔐'),
+      r('div',{style:{fontWeight:800,fontSize:'1.05rem',color:'white',marginBottom:'0.25rem'}},step==='set'?'Set your PIN':'Confirm your PIN'),
+      r('div',{style:{fontSize:'0.75rem',color:'rgba(255,255,255,0.6)',marginBottom:'0.5rem'}},step==='set'?'Choose a 4-digit PIN to protect your data':'Enter the same PIN again'),
+      err&&r('div',{style:{fontSize:'0.75rem',color:'#FCA5A5',marginBottom:'0.25rem'}},err),
+      r('div',{style:{animation:shake?'jimShake 0.45s ease':'none'}},r(PinDots,{count:pin.length})),
+      r(PinPad,{onDigit,onDelete:onDel})
+    )
+  );
+}
+
+function EnterPinScreen({onUnlock,email}){
+  const [pin,setPin]=useState('');
+  const [err,setErr]=useState('');
+  const [shake,setShake]=useState(false);
+  const [attempts,setAttempts]=useState(0);
+
+  function doShake(){setShake(true);setTimeout(()=>setShake(false),500);}
+
+  function onDigit(d){
+    if(pin.length>=4)return;
+    const next=pin+d;
+    setPin(next);
+    if(next.length===4){
+      hashPin(next).then(h=>onUnlock(h,()=>{
+        doShake();
+        setAttempts(a=>a+1);
+        setTimeout(()=>{setPin('');setErr('Wrong PIN. Try again.');},400);
+      }));
+    }
+  }
+  function onDel(){setPin(p=>p.slice(0,-1));setErr('');}
+
+  return r('div',{style:{minHeight:'100vh',background:'linear-gradient(135deg,#312E81 0%,#4338CA 40%,#6366F1 100%)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'1.5rem'}},
+    r('div',{style:{textAlign:'center',marginBottom:'1rem'}},
+      r('div',{style:{fontFamily:'cursive',fontSize:'2.2rem',color:'white',letterSpacing:'-1px'}},'Jimikki'),
+    ),
+    r('div',{style:{background:'rgba(255,255,255,0.1)',backdropFilter:'blur(12px)',borderRadius:'28px',padding:'2rem 1.5rem',width:'100%',maxWidth:'320px',textAlign:'center',border:'1px solid rgba(255,255,255,0.2)'}},
+      r('div',{style:{fontSize:'1.5rem',marginBottom:'0.4rem'}},'🔒'),
+      r('div',{style:{fontWeight:800,fontSize:'1.05rem',color:'white',marginBottom:'0.25rem'}},'Enter PIN'),
+      r('div',{style:{fontSize:'0.72rem',color:'rgba(255,255,255,0.55)',marginBottom:'0.5rem',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},email),
+      err&&r('div',{style:{fontSize:'0.75rem',color:'#FCA5A5',marginBottom:'0.25rem'}},err),
+      r('div',{style:{animation:shake?'jimShake 0.45s ease':'none'}},r(PinDots,{count:pin.length})),
+      r(PinPad,{onDigit,onDelete:onDel})
+    )
+  );
+}
+
+function LoginScreen(){
+  return r('div',{style:{minHeight:'100vh',background:'linear-gradient(135deg,#312E81 0%,#4338CA 40%,#6366F1 100%)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'1.5rem',position:'relative',overflow:'hidden'}},
+    r('div',{style:{position:'absolute',top:'-80px',right:'-60px',width:'300px',height:'300px',borderRadius:'50%',background:'rgba(255,255,255,0.05)'}}),
+    r('div',{style:{position:'absolute',bottom:'-100px',left:'-40px',width:'250px',height:'250px',borderRadius:'50%',background:'rgba(255,255,255,0.04)'}}),
+    r('div',{style:{position:'relative',width:'100%',maxWidth:'360px'}},
+      r('div',{style:{textAlign:'center',marginBottom:'2rem'}},
+        r('div',{style:{fontFamily:'cursive',fontSize:'3.5rem',color:'white',letterSpacing:'-1px',marginBottom:'0.35rem'}},'Jimikki'),
+        r('div',{style:{fontSize:'0.85rem',color:'rgba(255,255,255,0.65)',letterSpacing:'0.02em'}},'Your personal finance tracker')
+      ),
+      r('div',{style:{background:'white',borderRadius:'28px',padding:'2rem',boxShadow:'0 24px 64px rgba(0,0,0,0.35)'}},
+        r('div',{style:{marginBottom:'1.5rem'}},
+          r('div',{style:{fontWeight:800,fontSize:'1.1rem',color:C.text,marginBottom:'0.3rem'}},'Welcome back 👋'),
+          r('div',{style:{fontSize:'0.78rem',color:C.sub}})
+        ),
+        r('a',{href:'/api/auth/login',style:{display:'flex',alignItems:'center',justifyContent:'center',gap:'12px',padding:'0.9rem 1.25rem',borderRadius:'14px',border:'1.5px solid #E8ECF4',background:'white',color:C.text,textDecoration:'none',fontWeight:700,fontSize:'0.88rem',boxShadow:'0 2px 12px rgba(0,0,0,0.07)',cursor:'pointer',transition:'box-shadow 0.2s'}},
+          r(GoogleLogo),
+          'Continue with Google'
+        ),
+        r('div',{style:{display:'flex',alignItems:'center',gap:'10px',margin:'1.25rem 0'}},
+          r('div',{style:{flex:1,height:'1px',background:C.border}}),
+          r('div',{style:{fontSize:'0.65rem',color:C.muted,whiteSpace:'nowrap'}},'SECURE · PRIVATE · FREE'),
+          r('div',{style:{flex:1,height:'1px',background:C.border}})
+        ),
+        r('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'0.5rem'}},
+          ...[['🔒','Private','Only you see your data'],['☁️','Synced','Access anywhere'],['📊','Analytics','Track your wealth']].map(([icon,title,desc])=>
+            r('div',{key:title,style:{textAlign:'center',padding:'0.75rem 0.4rem',background:C.bg,borderRadius:'12px'}},
+              r('div',{style:{fontSize:'1.2rem',marginBottom:'4px'}},icon),
+              r('div',{style:{fontSize:'0.65rem',fontWeight:700,color:C.text,marginBottom:'2px'}},title),
+              r('div',{style:{fontSize:'0.55rem',color:C.muted,lineHeight:1.4}},desc)
+            )
+          )
+        )
+      ),
+      r('div',{style:{textAlign:'center',marginTop:'1.25rem',fontSize:'0.62rem',color:'rgba(255,255,255,0.4)'}},
+        'By signing in you agree to keep your finances in check 💸'
+      )
+    )
+  );
+}
+
+function BalanceAreaChart({data,height=200,onExplore}){
+  const [tip,setTip]=useState(null);
+  const svgRef=useRef(null);
+  if(!data||!data.length)return null;
+  const vals=data.map(d=>d.Value);
+  const max=Math.max(...vals,1),min=Math.min(...vals,0),range=max-min||1;
+  const W=460,H=height,pL=52,pB=24,pT=16,pR=8,cw=W-pL-pR,ch=H-pB-pT,n=data.length;
+  const xOf=i=>pL+(i/(n-1||1))*cw,yOf=v=>pT+ch-((v-min)/range)*ch;
+  const pts=data.map((d,i)=>[xOf(i),yOf(d.Value)]);
+  function smoothPath(){if(pts.length<2)return`M${pts[0]}`;let d=`M${pts[0][0]},${pts[0][1]}`;for(let i=0;i<pts.length-1;i++){const mx=(pts[i][0]+pts[i+1][0])/2;d+=` C${mx},${pts[i][1]} ${mx},${pts[i+1][1]} ${pts[i+1][0]},${pts[i+1][1]}`;}return d;}
+  const lp=smoothPath(),ap=`${lp} L${pts[n-1][0]},${H-pB} L${pts[0][0]},${H-pB} Z`;
+  const up=vals[vals.length-1]>=vals[0],lc=up?C.accent:C.red,gid='g'+Math.random().toString(36).slice(2,5);
+  function handleDot(ev,d,i){ev.stopPropagation();const rc=svgRef.current.getBoundingClientRect();setTip({x:rc.left+(xOf(i)/W)*rc.width,y:rc.top+(yOf(d.Value)/H)*rc.height,d});}
+  return r('div',{style:{position:'relative',userSelect:'none'}},
+    tip&&r('div',{style:{position:'fixed',inset:0,zIndex:90},onClick:()=>setTip(null)}),
+    r('svg',{ref:svgRef,viewBox:`0 0 ${W} ${H}`,style:{width:'100%',height,display:'block'},onClick:()=>setTip(null)},
+      r('defs',null,r('linearGradient',{id:gid,x1:'0',y1:'0',x2:'0',y2:'1'},r('stop',{offset:'0%',stopColor:lc,stopOpacity:0.22}),r('stop',{offset:'90%',stopColor:lc,stopOpacity:0.02}))),
+      ...Array.from({length:5},(_,i)=>{const v=min+(range/4)*i,y=yOf(v);return r('g',{key:i},r('line',{x1:pL,y1:y,x2:W-pR,y2:y,stroke:C.border,strokeDasharray:'3 3'}),r('text',{x:pL-4,y:y+3,textAnchor:'end',fontSize:9,fill:C.muted},fmtS(v)));}),
+      r('path',{d:ap,fill:`url(#${gid})`}),
+      r('path',{d:lp,fill:'none',stroke:lc,strokeWidth:2.5,strokeLinecap:'round',strokeLinejoin:'round'}),
+      ...data.map((d,i)=>r('g',{key:i},r('circle',{cx:xOf(i),cy:yOf(d.Value),r:tip&&tip.d===d?6:4,fill:'white',stroke:lc,strokeWidth:2.5,style:{cursor:'pointer'},onClick:ev=>handleDot(ev,d,i)}),r('text',{x:xOf(i),y:H-6,textAnchor:'middle',fontSize:9,fill:C.muted},d.name)))
+    ),
+    tip&&r('div',{style:{position:'fixed',left:tip.x,top:tip.y,transform:'translate(-50%,-115%)',background:'white',border:`1px solid ${C.border}`,borderRadius:'16px',padding:'12px 14px',boxShadow:'0 6px 28px rgba(0,0,0,0.14)',zIndex:999,minWidth:'180px'},onClick:e=>e.stopPropagation()},
+      r('div',{style:{fontSize:'0.65rem',fontWeight:700,color:C.muted,letterSpacing:'0.08em',marginBottom:'4px'}},'BALANCE · '+tip.d.name),
+      r('div',{style:{fontSize:'1.15rem',fontWeight:800,color:C.accent,marginBottom:'10px'}},fmt(tip.d.Value)),
+      r('button',{onClick:()=>{onExplore(makeExploreFilter(tip.d));setTip(null);},style:{width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',padding:'7px 10px',borderRadius:'10px',border:`1.5px solid ${C.accent}`,background:C.accentBg,color:C.accent,cursor:'pointer',fontWeight:700,fontSize:'0.75rem'}},'✦ Explore in Analytics')
+    )
+  );
+}
+
+function NetBarChart({data,height=190}){
+  const [tip,setTip]=useState(null);
+  const svgRef=useRef(null);
+  if(!data||!data.length)return null;
+  const max=Math.max(...data.map(d=>d.Value),1);
+  const W=460,H=height,pL=44,pB=24,pT=10,pR=8,cw=W-pL-pR,ch=H-pB-pT;
+  const bw=Math.min(28,cw/data.length*0.5),gap=cw/data.length;
+  const xOf=i=>pL+gap*i+gap/2,yOf=v=>pT+ch-Math.max(0,(v/max)*ch);
+  function showTip(ev,d,i){const rc=svgRef.current.getBoundingClientRect();setTip({x:rc.left+(xOf(i)/W)*rc.width,y:rc.top+(yOf(d.Value)/H)*rc.height,d});}
+  return r('div',{style:{position:'relative',userSelect:'none'}},
+    r('svg',{ref:svgRef,viewBox:`0 0 ${W} ${H}`,style:{width:'100%',height},onClick:()=>setTip(null)},
+      ...Array.from({length:5},(_,i)=>{const v=(max/4)*i,y=yOf(v);return r('g',{key:i},r('line',{x1:pL,y1:y,x2:W-pR,y2:y,stroke:C.border,strokeDasharray:'3 3'}),r('text',{x:pL-4,y:y+3,textAnchor:'end',fontSize:9,fill:C.muted},fmtS(v)));}),
+      ...data.map((d,i)=>r('g',{key:i,style:{cursor:'pointer'},onClick:ev=>{ev.stopPropagation();showTip(ev,d,i);}},r('rect',{x:xOf(i)-bw/2,y:yOf(d.Value),width:bw,height:Math.max(2,(d.Value/max)*ch),fill:tip&&tip.d===d?C.accent:'#818CF8',rx:4,opacity:tip&&tip.d===d?1:0.85}),r('text',{x:xOf(i),y:H-6,textAnchor:'middle',fontSize:9,fill:C.muted},d.name)))
+    ),
+    tip&&r('div',{style:{position:'fixed',left:tip.x,top:tip.y,transform:'translate(-50%,-110%)',background:'white',border:`1px solid ${C.border}`,borderRadius:'14px',padding:'10px 14px',boxShadow:'0 4px 24px rgba(0,0,0,0.12)',zIndex:999,whiteSpace:'nowrap'},onClick:e=>e.stopPropagation()},
+      r('div',{style:{fontWeight:700,color:C.sub,fontSize:'0.68rem',marginBottom:'6px'}},tip.d.name),
+      r('div',{style:{display:'flex',flexDirection:'column',gap:'3px'}},
+        r('div',{style:{display:'flex',justifyContent:'space-between',gap:'24px'}},r('span',{style:{color:C.green,fontWeight:600}},'Income'),r('span',{style:{fontWeight:700}},fmt(tip.d.inc))),
+        r('div',{style:{display:'flex',justifyContent:'space-between',gap:'24px'}},r('span',{style:{color:C.red,fontWeight:600}},'Spending'),r('span',{style:{fontWeight:700}},fmt(tip.d.spd))),
+        r('div',{style:{height:'1px',background:C.border,margin:'3px 0'}}),
+        r('div',{style:{display:'flex',justifyContent:'space-between',gap:'24px'}},r('span',{style:{color:C.accent,fontWeight:700}},'Net'),r('span',{style:{fontWeight:800,color:C.accent}},fmt(tip.d.Value)))
+      )
+    )
+  );
+}
+
+function DonutChart({data}){
+  const [tip,setTip]=useState(null);
+  if(!data||!data.length)return r('div',{style:{textAlign:'center',padding:'2rem',color:C.muted,fontSize:'0.8rem'}},'No data for this period');
+  const total=data.reduce((s,d)=>s+d.total,0);
+  const cx=90,cy=90,R=76,ri=48;let angle=-Math.PI/2;
+  const slices=data.map(d=>{const sa=angle,sw=(d.total/total)*2*Math.PI;angle+=sw;const ea=angle;const x1=cx+R*Math.cos(sa),y1=cy+R*Math.sin(sa),x2=cx+R*Math.cos(ea),y2=cy+R*Math.sin(ea),ix1=cx+ri*Math.cos(sa),iy1=cy+ri*Math.sin(sa),ix2=cx+ri*Math.cos(ea),iy2=cy+ri*Math.sin(ea),lg=sw>Math.PI?1:0;return{...d,path:`M${ix1},${iy1}L${x1},${y1}A${R},${R} 0 ${lg} 1 ${x2},${y2}L${ix2},${iy2}A${ri},${ri} 0 ${lg} 0 ${ix1},${iy1}Z`};});
+  return r('div',{style:{position:'relative',display:'flex',justifyContent:'center'}},
+    r('svg',{viewBox:'0 0 180 180',style:{width:180,height:180},onMouseLeave:()=>setTip(null)},
+      ...slices.map((s,i)=>r('path',{key:i,d:s.path,fill:s.color,stroke:'white',strokeWidth:2.5,style:{cursor:'pointer',opacity:tip&&tip.id!==s.id?.55:1},onMouseEnter:ev=>setTip({id:s.id,x:ev.clientX,y:ev.clientY,name:s.name,total:s.total,pct:((s.total/total)*100).toFixed(1)}),onTouchStart:ev=>setTip({id:s.id,x:ev.touches[0].clientX,y:ev.touches[0].clientY,name:s.name,total:s.total,pct:((s.total/total)*100).toFixed(1)})})),
+      r('text',{x:cx,y:cy-6,textAnchor:'middle',fontSize:11,fill:C.muted,fontWeight:600},'Total'),
+      r('text',{x:cx,y:cy+10,textAnchor:'middle',fontSize:12,fill:C.text,fontWeight:800},fmtS(total))
+    ),
+    tip&&r('div',{style:{position:'fixed',left:tip.x,top:tip.y,transform:'translate(-50%,-110%)',background:'white',border:`1px solid ${C.border}`,borderRadius:'14px',padding:'10px 14px',boxShadow:'0 4px 24px rgba(0,0,0,0.12)',zIndex:999,pointerEvents:'none'}},
+      r('div',{style:{fontWeight:700,color:C.sub,fontSize:'0.68rem',marginBottom:'4px'}},tip.name),
+      r('div',{style:{fontWeight:800,color:C.text}},fmt(tip.total)),
+      r('div',{style:{fontSize:'0.68rem',color:C.muted,marginTop:'2px'}},`${tip.pct}% of total`)
+    )
+  );
+}
+
+function BucketRow({b,total,grand}){
+  const pct=grand>0?((total/grand)*100).toFixed(1):0;
+  return r('div',{style:{marginBottom:'0.7rem'}},
+    r('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}},
+      r('div',{style:{display:'flex',alignItems:'center',gap:'7px'}},r('div',{style:{width:'9px',height:'9px',borderRadius:'3px',background:b.color,flexShrink:0}}),r('span',{style:{fontSize:'0.82rem',fontWeight:600,color:C.text}},b.name)),
+      r('div',null,r('span',{style:{fontSize:'0.82rem',fontWeight:700,color:C.text}},fmt(total)),r('span',{style:{fontSize:'0.65rem',color:C.muted,marginLeft:'5px'}},`${pct}%`))
+    ),
+    r('div',{style:{height:'5px',background:C.bg,borderRadius:'3px',overflow:'hidden'}},r('div',{style:{height:'100%',width:`${pct}%`,background:b.color,borderRadius:'3px'}}))
+  );
+}
+
+function DeleteConfirmModal({txn,bName,ibName,hName,onConfirm,onCancel}){
+  const col=txn.type==='income'?C.green:txn.type==='swap'?C.blue:C.red;
+  const lbl=txn.type==='income'?'Income':txn.type==='swap'?'Transfer':'Spending';
+  const desc=txn.note||(txn.incBucketId?ibName(txn.incBucketId):txn.bucketId?bName(txn.bucketId):'Transaction');
+  return r('div',{style:{position:'fixed',inset:0,zIndex:700,display:'flex',alignItems:'center',justifyContent:'center',padding:'1rem'}},
+    r('div',{style:{position:'absolute',inset:0,background:'rgba(0,0,0,0.45)',backdropFilter:'blur(5px)'},onClick:onCancel}),
+    r('div',{style:{position:'relative',background:'white',borderRadius:'24px',padding:'1.75rem 1.5rem',width:'100%',maxWidth:'360px',boxShadow:'0 12px 48px rgba(0,0,0,0.22)',textAlign:'center'}},
+      r('div',{style:{width:'56px',height:'56px',borderRadius:'50%',background:C.redBg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.6rem',margin:'0 auto 1rem'}},'🗑️'),
+      r('div',{style:{fontWeight:800,fontSize:'1rem',color:C.text,marginBottom:'0.4rem'}},'Delete Transaction?'),
+      r('div',{style:{fontSize:'0.78rem',color:C.sub,marginBottom:'1rem',lineHeight:1.6}},'This will reverse the ',r('span',{style:{color:col,fontWeight:700}},lbl.toLowerCase()),' of ',r('span',{style:{fontWeight:700,color:C.text}},fmt(txn.amount)),` (${desc}) and move it to Recycle Bin.`),
+      r('div',{style:{background:C.bg,borderRadius:'12px',padding:'0.65rem',fontSize:'0.72rem',color:C.muted,marginBottom:'1.25rem'}},'💡 Restore anytime from Recycle Bin in Analytics → Transactions'),
+      r('div',{style:{display:'flex',gap:'0.65rem'}},
+        r('button',{onClick:onCancel,style:{flex:1,padding:'0.75rem',borderRadius:'12px',border:`1.5px solid ${C.border}`,background:'white',color:C.sub,cursor:'pointer',fontWeight:700}},'Cancel'),
+        r('button',{onClick:onConfirm,style:{flex:1,padding:'0.75rem',borderRadius:'12px',border:'none',background:C.red,color:'white',cursor:'pointer',fontWeight:700}},'Delete')
+      )
+    )
+  );
+}
+
+function HomeFilterPanel({filter,onChange,onClose}){
+  const now=new Date();
+  const [type,setType]=useState(filter.type||'all');
+  const [from,setFrom]=useState(filter.from||'');
+  const [to,setTo]=useState(filter.to||'');
+  const [ym,setYm]=useState(filter.ym||`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`);
+  const months=[];for(let i=0;i<24;i++){const d=new Date(now.getFullYear(),now.getMonth()-i,1);months.push({key:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`,label:d.toLocaleDateString('en',{month:'long',year:'numeric'})});}
+  function apply(){onChange(type==='custom'?{type,from,to}:type==='yearmonth'?{type,ym}:{type});onClose();}
+  const pill=(t,l)=>r('button',{key:t,onClick:()=>setType(t),style:{padding:'6px 14px',borderRadius:'999px',border:`1px solid ${type===t?C.accent:C.border}`,background:type===t?C.accent:'white',color:type===t?'white':C.sub,cursor:'pointer',fontSize:'0.73rem',fontWeight:700}},l);
+  return r('div',{style:{position:'fixed',inset:0,zIndex:400,display:'flex',alignItems:'flex-end',justifyContent:'center'}},
+    r('div',{style:{position:'absolute',inset:0,background:'rgba(0,0,0,0.4)',backdropFilter:'blur(4px)'},onClick:onClose}),
+    r('div',{style:{position:'relative',background:'white',borderRadius:'28px 28px 0 0',padding:'1.5rem 1.25rem 2.5rem',width:'100%',maxWidth:'480px',boxShadow:'0 -8px 40px rgba(0,0,0,0.15)'}},
+      r('div',{style:{width:'36px',height:'4px',borderRadius:'2px',background:C.border,margin:'0 auto 1.25rem'}}),
+      r('div',{style:{fontWeight:800,fontSize:'1rem',color:C.text,marginBottom:'1rem'}},'🗓 Filter by Time'),
+      r('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'1rem'}},pill('all','All Time'),pill('week','This Week'),pill('month','This Month'),pill('quarter','Last 3 Mo'),pill('year','This Year'),pill('yearmonth','Specific Month'),pill('custom','Custom Range')),
+      type==='yearmonth'&&r('select',{value:ym,onChange:ev=>setYm(ev.target.value),style:{width:'100%',background:C.bg,border:`1.5px solid ${C.border}`,borderRadius:'12px',padding:'0.6rem 0.85rem',color:C.text,fontSize:'0.9rem',outline:'none',marginBottom:'1rem'}},...months.map(m=>r('option',{key:m.key,value:m.key},m.label))),
+      type==='custom'&&r('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.6rem',marginBottom:'1rem'}},
+        r('div',null,r('div',{style:{fontSize:'0.62rem',fontWeight:700,color:C.muted,marginBottom:'5px'}},'FROM'),r('input',{type:'date',value:from,onChange:ev=>setFrom(ev.target.value),style:{width:'100%',background:C.bg,border:`1.5px solid ${C.border}`,borderRadius:'12px',padding:'0.6rem 0.85rem',color:C.text,outline:'none'}})),
+        r('div',null,r('div',{style:{fontSize:'0.62rem',fontWeight:700,color:C.muted,marginBottom:'5px'}},'TO'),r('input',{type:'date',value:to,onChange:ev=>setTo(ev.target.value),style:{width:'100%',background:C.bg,border:`1.5px solid ${C.border}`,borderRadius:'12px',padding:'0.6rem 0.85rem',color:C.text,outline:'none'}}))
+      ),
+      r('button',{onClick:apply,style:{width:'100%',padding:'0.85rem',borderRadius:'14px',border:'none',background:C.accent,color:'white',fontWeight:800,fontSize:'0.95rem',cursor:'pointer'}},'Apply Filter')
+    )
+  );
+}
+
+function AnalyticsFilterModal({timeFilter,holderFilter,bucketFilter,holders,actExpB,actIncB,onApply,onClose}){
+  const now=new Date();
+  const [type,setType]=useState(timeFilter.type||'month');
+  const [from,setFrom]=useState(timeFilter.from||'');
+  const [to,setTo]=useState(timeFilter.to||'');
+  const [ym,setYm]=useState(timeFilter.ym||`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`);
+  const [hF,setHF]=useState(holderFilter);
+  const [bF,setBF]=useState(bucketFilter);
+  const months=[];for(let i=0;i<24;i++){const d=new Date(now.getFullYear(),now.getMonth()-i,1);months.push({key:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`,label:d.toLocaleDateString('en',{month:'long',year:'numeric'})});}
+  function apply(){onApply(type==='custom'?{type,from,to}:type==='yearmonth'?{type,ym}:{type},hF,bF);onClose();}
+  function clear(){setType('month');setHF(null);setBF(null);}
+  const tpill=(t,l)=>r('button',{key:t,onClick:()=>setType(t),style:{padding:'5px 12px',borderRadius:'999px',border:`1px solid ${type===t?C.accent:C.border}`,background:type===t?C.accent:'white',color:type===t?'white':C.sub,cursor:'pointer',fontSize:'0.7rem',fontWeight:700}},l);
+  const hchip=h=>{const a=hF===h.id;return r('button',{key:h.id,onClick:()=>setHF(a?null:h.id),style:{padding:'4px 12px',borderRadius:'999px',border:`1px solid ${a?C.accent:C.border}`,background:a?C.accentBg:'white',color:a?C.accent:C.sub,cursor:'pointer',fontSize:'0.71rem',fontWeight:a?700:400}},h.name);};
+  const bchip=b=>{const a=bF===b.id;return r('button',{key:b.id,onClick:()=>setBF(a?null:b.id),style:{display:'flex',alignItems:'center',gap:'5px',padding:'4px 12px',borderRadius:'999px',border:`1px solid ${a?C.accent:C.border}`,background:a?C.accentBg:'white',color:a?C.accent:C.sub,cursor:'pointer',fontSize:'0.71rem',fontWeight:a?700:400}},r('span',{style:{width:'7px',height:'7px',borderRadius:'50%',background:b.color,display:'inline-block'}}),b.name);};
+  const sec=(label,children)=>r('div',{style:{marginBottom:'1rem'}},r('div',{style:{fontSize:'0.6rem',fontWeight:700,color:C.muted,letterSpacing:'0.1em',marginBottom:'0.45rem'}},label),children);
+  return r('div',{style:{position:'fixed',inset:0,zIndex:500,display:'flex',alignItems:'flex-end',justifyContent:'center'}},
+    r('div',{style:{position:'absolute',inset:0,background:'rgba(0,0,0,0.42)',backdropFilter:'blur(4px)'},onClick:onClose}),
+    r('div',{style:{position:'relative',background:'white',borderRadius:'28px 28px 0 0',padding:'1.5rem 1.25rem 2.5rem',width:'100%',maxWidth:'480px',boxShadow:'0 -8px 40px rgba(0,0,0,0.18)',maxHeight:'88vh',overflowY:'auto'}},
+      r('div',{style:{width:'36px',height:'4px',borderRadius:'2px',background:C.border,margin:'0 auto 1.1rem'}}),
+      r('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1.1rem'}},
+        r('div',{style:{fontWeight:800,fontSize:'1rem',color:C.text}},'⚙️ Analytics Filter'),
+        r('button',{onClick:clear,style:{fontSize:'0.72rem',color:C.accent,background:C.accentBg,border:'none',cursor:'pointer',fontWeight:700,padding:'4px 8px',borderRadius:'8px'}},'Clear All')
+      ),
+      sec('TIME PERIOD',r('div',null,
+        r('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}},tpill('all','All Time'),tpill('week','This Week'),tpill('month','This Month'),tpill('quarter','Last 3 Mo'),tpill('year','This Year'),tpill('yearmonth','Specific Month'),tpill('custom','Custom Range')),
+        type==='yearmonth'&&r('select',{value:ym,onChange:ev=>setYm(ev.target.value),style:{marginTop:'0.5rem',width:'100%',background:C.bg,border:`1.5px solid ${C.border}`,borderRadius:'12px',padding:'0.6rem 0.85rem',color:C.text,fontSize:'0.88rem',outline:'none'}},...months.map(m=>r('option',{key:m.key,value:m.key},m.label))),
+        type==='custom'&&r('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.5rem',marginTop:'0.5rem'}},
+          r('div',null,r('div',{style:{fontSize:'0.62rem',fontWeight:700,color:C.muted,marginBottom:'4px'}},'FROM'),r('input',{type:'date',value:from,onChange:ev=>setFrom(ev.target.value),style:{width:'100%',background:C.bg,border:`1.5px solid ${C.border}`,borderRadius:'12px',padding:'0.55rem 0.75rem',color:C.text,fontSize:'0.82rem',outline:'none'}})),
+          r('div',null,r('div',{style:{fontSize:'0.62rem',fontWeight:700,color:C.muted,marginBottom:'4px'}},'TO'),r('input',{type:'date',value:to,onChange:ev=>setTo(ev.target.value),style:{width:'100%',background:C.bg,border:`1.5px solid ${C.border}`,borderRadius:'12px',padding:'0.55rem 0.75rem',color:C.text,fontSize:'0.82rem',outline:'none'}}))
+        )
+      )),
+      holders.filter(h=>!h.deleted).length>0&&sec('HOLDER',r('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}},
+        r('button',{onClick:()=>setHF(null),style:{padding:'4px 12px',borderRadius:'999px',border:`1px solid ${!hF?C.accent:C.border}`,background:!hF?C.accentBg:'white',color:!hF?C.accent:C.sub,cursor:'pointer',fontSize:'0.71rem',fontWeight:!hF?700:400}},'All Holders'),
+        ...holders.filter(h=>!h.deleted).map(hchip)
+      )),
+      sec('INCOME SOURCE',r('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}},
+        r('button',{onClick:()=>setBF(null),style:{padding:'4px 12px',borderRadius:'999px',border:`1px solid ${C.border}`,background:'white',color:C.muted,cursor:'pointer',fontSize:'0.71rem'}},!bF?'● All':' All'),
+        ...actIncB.map(bchip)
+      )),
+      sec('EXPENSE CATEGORY',r('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}},...actExpB.map(bchip))),
+      r('button',{onClick:apply,style:{width:'100%',padding:'0.85rem',borderRadius:'14px',border:'none',background:C.accent,color:'white',fontWeight:800,fontSize:'0.95rem',cursor:'pointer'}},'Apply Filter')
+    )
+  );
+}
+
+function Card({children,style={}}){return r('div',{style:{background:C.card,borderRadius:'20px',padding:'1.25rem',boxShadow:'0 2px 12px rgba(0,0,0,0.05)',border:`1px solid ${C.border}`,...style}},children);}
+function SL({children,req}){return r('div',{style:{fontSize:'0.62rem',fontWeight:700,color:C.muted,letterSpacing:'0.09em',marginBottom:'5px',display:'flex',gap:'3px'}},children,req&&r('span',{style:{color:C.red}},'*'));}
+function FI({style={},...p}){return r('input',{...p,style:{width:'100%',background:C.bg,border:`1.5px solid ${C.border}`,borderRadius:'12px',padding:'0.6rem 0.85rem',color:C.text,fontSize:'0.9rem',outline:'none',boxSizing:'border-box',...style}});}
+function FS({children,style={},...p}){return r('select',{...p,style:{width:'100%',background:C.bg,border:`1.5px solid ${C.border}`,borderRadius:'12px',padding:'0.6rem 0.85rem',color:C.text,fontSize:'0.88rem',outline:'none',boxSizing:'border-box',...style}},children);}
+function GranPills({value,onChange}){return r('div',{style:{display:'flex',gap:'4px',flexWrap:'wrap'}},...[['week','Weekly'],['month','Monthly'],['year','Yearly']].map(([v,l])=>r('button',{key:v,onClick:()=>onChange(v),style:{padding:'4px 10px',borderRadius:'999px',border:`1px solid ${value===v?C.accent:C.border}`,background:value===v?C.accent:'white',color:value===v?'white':C.sub,cursor:'pointer',fontSize:'0.68rem',fontWeight:700}},l)));}
+
+function Jimikki(){
+  const [view,setView]=useState('home');
+  const [sidebar,setSidebar]=useState(false);
+  const [holders,setHolders]=useState([]);
+  const [txns,setTxns]=useState([]);
+  const [expBuckets,setExpBuckets]=useState(DEF_EXP);
+  const [incBuckets,setIncBuckets]=useState(DEF_INC);
+  const [loaded,setLoaded]=useState(false);
+  const [loggedIn,setLoggedIn]=useState(null);
+  const [pinHash,setPinHash]=useState(null);   // stored hash from DB
+  const [pinUnlocked,setPinUnlocked]=useState(false); // session unlock
+  const [isDesktop,setIsDesktop]=useState(()=>window.innerWidth>768);
+  const [userEmail,setUserEmail]=useState('');
+  const [sheetUrl,setSheetUrl]=useState('');  // ← NEW
+  const [syncStatus,setSyncStatus]=useState('idle'); // idle | syncing | success | error
+  const [lastSyncedAt,setLastSyncedAt]=useState(null);
+  const [lastSyncError,setLastSyncError]=useState(null);
+  const syncRetryTimer=useRef(null);
+  const syncRetryCount=useRef(0);
+  const [toast,setToast]=useState('');
+  const [pendingDelId,setPendingDelId]=useState(null);
+
+  const [fabOpen,setFabOpen]=useState(false);
+  const [fabMode,setFabMode]=useState(null);
+  const [jAmt,setJAmt]=useState('');
+  const [jNote,setJNote]=useState('');
+  const [jExpB,setJExpB]=useState('');
+  const [jIncB,setJIncB]=useState('');
+  const [jFrom,setJFrom]=useState('');
+  const [jTo,setJTo]=useState('');
+  const [jDate,setJDate]=useState(todayStr());
+
+  const [hFilter,setHFilter]=useState({type:'month'});
+  const [hFilterOpen,setHFilterOpen]=useState(false);
+  const [hGran,setHGran]=useState('month');
+  const [hHFilter,setHHFilter]=useState(null);
+
+  const [aFilter,setAFilter]=useState({type:'month'});
+  const [aHFilter,setAHFilter]=useState(null);
+  const [aBFilter,setABFilter]=useState(null);
+  const [aFilterOpen,setAFilterOpen]=useState(false);
+  const [aView,setAView]=useState('flow');
+
+  const [successFlash,setSuccessFlash]=useState(null);
+  const [shakeActive,setShakeActive]=useState(false);
+  const [wealthHidden,setWealthHidden]=useState(true);
+  const [binOpen,setBinOpen]=useState(false);
+  // ── AI CHAT STATE ──
+  const [aiOpen,setAiOpen]=useState(false);
+  const [aiMessages,setAiMessages]=useState([{role:'assistant',content:'Hi! 👋 I\'m Jimikki AI — I have your complete financial database and can answer anything. Ask me about any transaction, any date, totals, comparisons, trends — everything!'}]);
+  const [aiInput,setAiInput]=useState('');
+  const [aiLoading,setAiLoading]=useState(false);
+  const aiEndRef=useRef(null);
+  const aiInputRef=useRef(null);
+  const [nhName,setNhName]=useState('');
+const [nhBal,setNhBal]=useState('');
+  const [hhAdd,setHhAdd]=useState(false);
+  const [nbExpName,setNbExpName]=useState('');const [nbExpColor,setNbExpColor]=useState(PALETTE[0]);
+  const [nbIncName,setNbIncName]=useState('');const [nbIncColor,setNbIncColor]=useState(PALETTE[3]);
+
+  const actH=holders.filter(x=>!x.deleted);
+  const delH=holders.filter(x=>x.deleted);
+  const actExpB=expBuckets.filter(b=>!b.deleted);
+  const actIncB=incBuckets.filter(b=>!b.deleted);
+  const actT=txns.filter(t=>!t.deleted).sort((a,b)=>b.date.localeCompare(a.date));
+  const delT=txns.filter(t=>t.deleted);
+
+  const hN=id=>holders.find(x=>x.id===id)?.name||'?';
+  const bN=id=>expBuckets.find(x=>x.id===id)?.name||'(removed)';
+  const bC=id=>expBuckets.find(x=>x.id===id)?.color||C.muted;
+  const ibN=id=>incBuckets.find(x=>x.id===id)?.name||'(removed)';
+  const ibC=id=>incBuckets.find(x=>x.id===id)?.color||C.muted;
+  const wealth=fH=>(fH?actH.filter(x=>x.id===fH):actH).reduce((s,x)=>s+x.balance,0);
+
+  useEffect(()=>{const fn=()=>setIsDesktop(window.innerWidth>768);window.addEventListener('resize',fn);return()=>window.removeEventListener('resize',fn);},[]);
+
+  useEffect(()=>{
+    fetch('/api/data')
+      .then(r=>{
+        if(r.status===401){setLoggedIn(false);setLoaded(true);return null;}
+        if(!r.ok)throw new Error();
+        return r.json();
+      })
+      .then(d=>{
+        if(!d)return;
+        setHolders(d.holders||[]);
+        setTxns(d.transactions||[]);
+        setExpBuckets(d.expBuckets||DEF_EXP);
+        setIncBuckets(d.incBuckets||DEF_INC);
+        if(d.email)setUserEmail(d.email);
+        if(d.sheetUrl)setSheetUrl(d.sheetUrl); // ← NEW
+        if(d.syncStatus)setSyncStatus(d.syncStatus); // ← NEW
+        if(d.lastSyncedAt)setLastSyncedAt(d.lastSyncedAt); // ← NEW
+        if(d.lastError)setLastSyncError(d.lastError); // ← NEW
+        if(d.pinHash)setPinHash(d.pinHash);
+        setLoggedIn(true);
+        setLoaded(true);
+      })
+      .catch(()=>{setLoggedIn(false);setLoaded(true);});
+  },[]);
+
+  // ── SYNC ENGINE: pushes full state to /api/data, tracks live status,
+  //    and auto-retries with backoff on failure (retry always resends the
+  //    FULL current state, so one successful retry catches everything up) ──
+  function runSync(payload){
+    setSyncStatus('syncing');
+    fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+      .then(r=>r.json())
+      .then(d=>{
+        if(d.sheetUrl)setSheetUrl(d.sheetUrl);
+        if(d.syncStatus==='success'){
+          setSyncStatus('success');
+          setLastSyncedAt(d.lastSyncedAt||new Date().toISOString());
+          setLastSyncError(null);
+          syncRetryCount.current=0;
+          if(syncRetryTimer.current){clearTimeout(syncRetryTimer.current);syncRetryTimer.current=null;}
+        }else{
+          if(d.lastSyncedAt)setLastSyncedAt(d.lastSyncedAt);
+          setSyncStatus('error');
+          setLastSyncError(d.lastError||'Sync failed');
+          scheduleSyncRetry(payload);
+        }
+      })
+      .catch(()=>{
+        setSyncStatus('error');
+        setLastSyncError('Network error');
+        scheduleSyncRetry(payload);
+      });
+  }
+  function scheduleSyncRetry(payload){
+    if(syncRetryTimer.current)clearTimeout(syncRetryTimer.current);
+    const n=Math.min(syncRetryCount.current,5);
+    const delay=Math.min(60000,5000*Math.pow(2,n)); // 5s,10s,20s,40s,60s cap
+    syncRetryCount.current=n+1;
+    syncRetryTimer.current=setTimeout(()=>runSync(payload),delay);
+  }
+  function retrySyncNow(){
+    if(syncRetryTimer.current){clearTimeout(syncRetryTimer.current);syncRetryTimer.current=null;}
+    syncRetryCount.current=0;
+    runSync({holders,transactions:txns,expBuckets,incBuckets,pinHash});
+  }
+
+  useEffect(()=>{
+    if(!loaded||!loggedIn)return;
+    runSync({holders,transactions:txns,expBuckets,incBuckets,pinHash});
+    return ()=>{ if(syncRetryTimer.current){clearTimeout(syncRetryTimer.current);syncRetryTimer.current=null;} };
+  },[holders,txns,expBuckets,incBuckets,pinHash,loaded,loggedIn]);
+
+  // If a sync failed and connectivity comes back (or the tab is reopened),
+  // instantly retry instead of waiting for the backoff timer.
+  useEffect(()=>{
+    function reconnectRetry(){
+      if(syncStatus==='error')retrySyncNow();
+    }
+    window.addEventListener('online',reconnectRetry);
+    document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible')reconnectRetry(); });
+    return ()=>window.removeEventListener('online',reconnectRetry);
+  },[syncStatus,holders,txns,expBuckets,incBuckets,pinHash]);
+
+  // AI Chat: auto-scroll to bottom
+  useEffect(()=>{
+    if(aiOpen&&aiEndRef.current)aiEndRef.current.scrollIntoView({behavior:'smooth'});
+  },[aiMessages,aiOpen,aiLoading]);
+
+  // AI Chat: focus input when opened
+  useEffect(()=>{
+    if(aiOpen)setTimeout(()=>aiInputRef.current&&aiInputRef.current.focus(),300);
+  },[aiOpen]);
+
+  async function sendAiMessage(){
+    const msg=aiInput.trim();
+    if(!msg||aiLoading)return;
+    const newHistory=[...aiMessages,{role:'user',content:msg}];
+    setAiMessages(newHistory);
+    setAiInput('');
+    setAiLoading(true);
+    try{
+      const res=await fetch('/api/chat',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          message:msg,
+          history:newHistory.slice(-10)
+          // NOTE: No userData needed — chat.js reads directly from D1 database
+        })
+      });
+      const data=await res.json();
+      const reply=data.reply||data.error||'Sorry, something went wrong.';
+      setAiMessages(h=>[...h,{role:'assistant',content:reply}]);
+    }catch(e){
+      setAiMessages(h=>[...h,{role:'assistant',content:'⚠️ Could not reach AI. Check your Workers AI binding in Cloudflare.'}]);
+    }finally{
+      setAiLoading(false);
+    }
+  }
+
+  const pop=msg=>{setToast(msg);setTimeout(()=>setToast(''),2800);};
+
+  function getStats(list){
+    const inc=list.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+    const spd=list.filter(t=>t.type==='spending').reduce((s,t)=>s+t.amount,0);
+    return{inc,spd,net:inc-spd};
+  }
+
+  function triggerShake(){setShakeActive(false);requestAnimationFrame(()=>requestAnimationFrame(()=>{setShakeActive(true);setTimeout(()=>setShakeActive(false),600);}));}
+  function err(msg){triggerShake();pop(msg);}
+
+  function openFab(mode){setFabMode(mode);setSuccessFlash(null);setShakeActive(false);setJAmt('');setJNote('');setJExpB('');setJIncB('');setJDate(todayStr());setJFrom(actH.find(x=>x.isPrimary)?.id||actH[0]?.id||'');setJTo('');}
+
+  function showSuccess(type,amount){
+    const cfg={
+      income:{icon:'✓',label:'Income Added!',sub:'Great, keep it up!',col:'#059669',bg:'#ECFDF5',ring:'#6EE7B7'},
+      spending:{icon:'✓',label:'Expense Recorded!',sub:'Tracked successfully',col:'#059669',bg:'#ECFDF5',ring:'#6EE7B7'},
+      swap:{icon:'✓',label:'Transfer Done!',sub:'Funds moved safely',col:'#059669',bg:'#ECFDF5',ring:'#6EE7B7'},
+    };
+    setSuccessFlash({...cfg[type]||cfg.income,amount,type});
+    setTimeout(()=>{setSuccessFlash(null);setFabOpen(false);setFabMode(null);},2000);
+  }
+
+  function submitTxn(){
+    const amt=parseFloat(jAmt);
+    if(!amt||amt<=0)return err('Enter a valid amount');
+    const from=holders.find(x=>x.id===jFrom);
+    if(!from)return err('Select a holder');
+    if(fabMode==='swap'){
+      if(!jTo||jTo===jFrom)return err('Select a different destination');
+      if(!jNote.trim())return err('Note is required for transfers');
+      if(from.balance<amt)return err('Insufficient balance');
+      setTxns(ts=>[{id:uid(),type:'swap',amount:amt,note:jNote.trim(),holderId:jFrom,toHolderId:jTo,date:jDate,deleted:false},...ts]);
+      setHolders(hs=>hs.map(x=>{if(x.id===jFrom)return{...x,balance:x.balance-amt};if(x.id===jTo)return{...x,balance:x.balance+amt};return x;}));
+      showSuccess('swap',amt);return;
+    }
+    if(fabMode==='income'){
+      if(!jIncB)return err('Select an income source');
+      if(jIncB===OI&&amt>=1000&&!jNote.trim())return err('Note required for "Other" when ≥ ₹1,000');
+      setTxns(ts=>[{id:uid(),type:'income',amount:amt,note:jNote.trim(),incBucketId:jIncB,holderId:jFrom,date:jDate,deleted:false},...ts]);
+      setHolders(hs=>hs.map(x=>x.id===jFrom?{...x,balance:x.balance+amt}:x));
+    }else{
+      if(!jExpB)return err('Select a spending category');
+      if(jExpB===OE&&amt>=1000&&!jNote.trim())return err('Note required for "Other" when ≥ ₹1,000');
+      if(from.balance<amt)return err('Insufficient balance');
+      setTxns(ts=>[{id:uid(),type:'spending',amount:amt,note:jNote.trim(),bucketId:jExpB,holderId:jFrom,date:jDate,deleted:false},...ts]);
+      setHolders(hs=>hs.map(x=>x.id===jFrom?{...x,balance:x.balance-amt}:x));
+    }
+    showSuccess(fabMode,amt);
+  }
+
+  const isOther=(fabMode==='income'&&jIncB===OI)||(fabMode==='spending'&&jExpB===OE);
+  const otherNeedsNote=isOther&&parseFloat(jAmt||0)>=1000;
+
+  function confirmDel(){
+    const t=txns.find(x=>x.id===pendingDelId);if(!t){setPendingDelId(null);return;}
+    if(t.type==='income'){const x=holders.find(x=>x.id===t.holderId);if(x&&x.balance<t.amount){setPendingDelId(null);return pop('Cannot delete — would cause negative balance');}}
+    if(t.type==='swap'){const x=holders.find(x=>x.id===t.toHolderId);if(x&&x.balance<t.amount){setPendingDelId(null);return pop('Cannot delete — would cause negative balance');}}
+    setHolders(hs=>hs.map(x=>{
+      if(t.type==='income'&&x.id===t.holderId)return{...x,balance:x.balance-t.amount};
+      if(t.type==='spending'&&x.id===t.holderId)return{...x,balance:x.balance+t.amount};
+      if(t.type==='swap'){if(x.id===t.holderId)return{...x,balance:x.balance+t.amount};if(x.id===t.toHolderId)return{...x,balance:x.balance-t.amount};}
+      return x;
+    }));
+    setTxns(ts=>ts.map(x=>x.id===pendingDelId?{...x,deleted:true}:x));
+    setPendingDelId(null);pop('Moved to Recycle Bin 🗑️');
+  }
+
+  function restTxn(id){
+    const t=txns.find(x=>x.id===id);if(!t)return;
+    setHolders(hs=>hs.map(x=>{if(t.type==='income'&&x.id===t.holderId)return{...x,balance:x.balance+t.amount};if(t.type==='spending'&&x.id===t.holderId)return{...x,balance:x.balance-t.amount};if(t.type==='swap'){if(x.id===t.holderId)return{...x,balance:x.balance-t.amount};if(x.id===t.toHolderId)return{...x,balance:x.balance+t.amount};}return x;}));
+    setTxns(ts=>ts.map(x=>x.id===id?{...x,deleted:false}:x));pop('Restored ✓');
+  }
+
+  function addHolder(){if(!nhName.trim())return pop('Enter a name');const bal=Math.max(0,parseFloat(nhBal)||0);setHolders(hs=>[...hs,{id:uid(),name:nhName.trim(),balance:bal,isPrimary:hs.filter(x=>!x.deleted).length===0,deleted:false}]);setNhName('');setNhBal('');pop('Holder added ✓');}
+  function tryDelHolder(id){const h=holders.find(x=>x.id===id);if(!h)return;if(h.isPrimary)return pop("Can't remove the primary holder");if(h.balance>0)return pop(`"${h.name}" has ${fmt(h.balance)} — clear balance first`);setHolders(hs=>hs.filter(x=>x.id!==id));pop(`"${h.name}" deleted ✓`);}
+  function restHolder(id){setHolders(hs=>hs.map(x=>x.id===id?{...x,deleted:false}:x));pop('Restored ✓');}
+  function setPrimary(id){setHolders(hs=>hs.map(x=>({...x,isPrimary:x.id===id})));pop('Primary set');}
+
+  function addExpB(){if(!nbExpName.trim())return pop('Enter name');const fixed=expBuckets.find(b=>b.id===OE);setExpBuckets(bs=>[...bs.filter(b=>!b.fixed),{id:uid(),name:nbExpName.trim(),color:nbExpColor,deleted:false},fixed].filter(Boolean));setNbExpName('');pop('Expense bucket added ✓');}
+  function delExpB(id){if(id===OE)return;setExpBuckets(bs=>bs.map(b=>b.id===id?{...b,deleted:true}:b));pop('Removed — history preserved');}
+  function addIncB(){if(!nbIncName.trim())return pop('Enter name');const fixed=incBuckets.find(b=>b.id===OI);setIncBuckets(bs=>[...bs.filter(b=>!b.fixed),{id:uid(),name:nbIncName.trim(),color:nbIncColor,deleted:false},fixed].filter(Boolean));setNbIncName('');pop('Income bucket added ✓');}
+  function delIncB(id){if(id===OI)return;setIncBuckets(bs=>bs.map(b=>b.id===id?{...b,deleted:true}:b));pop('Removed — history preserved');}
+
+  function handleExplore(filter){setAFilter(filter);setAHFilter(null);setABFilter(null);setAView('txns');setView('analytics');}
+  function handleAFilter(tf,hf,bf){setAFilter(tf);setAHFilter(hf);setABFilter(bf);}
+
+  const hFilteredT=applyFilter(actT.filter(t=>t.type!=='swap'&&(!hHFilter||t.holderId===hHFilter)),hFilter);
+  const hStats=getStats(hFilteredT);
+  const hBalData=buildBalanceData(actT,holders,hHFilter,hGran);
+
+  const aFilteredT=applyFilter(actT.filter(t=>{const hMatch=!aHFilter||t.holderId===aHFilter||(t.type==='swap'&&t.toHolderId===aHFilter);const bMatch=!aBFilter||t.bucketId===aBFilter||t.incBucketId===aBFilter;return hMatch&&bMatch;}),aFilter);
+  const aStats=getStats(aFilteredT.filter(t=>t.type!=='swap'));
+  const incStats=actIncB.map(b=>({...b,total:aFilteredT.filter(t=>t.type==='income'&&t.incBucketId===b.id).reduce((s,t)=>s+t.amount,0)})).filter(b=>b.total>0).sort((a,b)=>b.total-a.total);
+  const incTotal=incStats.reduce((s,b)=>s+b.total,0);
+  const expStats=actExpB.map(b=>({...b,total:aFilteredT.filter(t=>t.type==='spending'&&t.bucketId===b.id).reduce((s,t)=>s+t.amount,0)})).filter(b=>b.total>0).sort((a,b)=>b.total-a.total);
+  const expTotal=expStats.reduce((s,b)=>s+b.total,0);
+  const aBadge=()=>{const p=[filterLabel(aFilter)];if(aHFilter){const h=holders.find(x=>x.id===aHFilter);if(h)p.push(h.name);}if(aBFilter){const ib=incBuckets.find(x=>x.id===aBFilter),eb=expBuckets.find(x=>x.id===aBFilter);p.push(ib?.name||eb?.name||'');}return p.filter(Boolean).join(' · ');};
+  const aActiveCount=(aFilter.type!=='all'?1:0)+(aHFilter?1:0)+(aBFilter?1:0);
+  const pendingTxn=pendingDelId?txns.find(x=>x.id===pendingDelId):null;
+
+  function TxnRow({t,onDel,onRest}){
+    const col=t.type==='income'?C.green:t.type==='swap'?C.blue:C.red;
+    const bg=t.type==='income'?C.greenBg:t.type==='swap'?'#EFF6FF':C.redBg;
+    const bLabel=t.type==='income'?ibN(t.incBucketId):t.type==='spending'?bN(t.bucketId):null;
+    const bCol=t.type==='income'?ibC(t.incBucketId):t.type==='spending'?bC(t.bucketId):null;
+    return r('div',{style:{display:'grid',gridTemplateColumns:'40px 1fr auto 34px',gap:'0.5rem',alignItems:'center',padding:'0.7rem 0',borderBottom:`1px solid ${C.border}`}},
+      r('div',{style:{width:'40px',height:'40px',borderRadius:'12px',background:bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.1rem',flexShrink:0}},t.type==='income'?'↙️':t.type==='swap'?'↔️':'↗️'),
+      r('div',{style:{minWidth:0}},
+        r('div',{style:{fontSize:'0.85rem',fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},t.note||bLabel||'Transfer'),
+        r('div',{style:{fontSize:'0.68rem',color:C.sub,marginTop:'2px',display:'flex',gap:'5px',flexWrap:'wrap'}},
+          r('span',null,t.date),
+          bLabel&&r('span',{style:{color:bCol,fontWeight:600}},`· ${bLabel}`),
+          t.toHolderId&&r('span',{style:{color:C.blue}},`· ${hN(t.holderId)} → ${hN(t.toHolderId)}`),
+          !t.toHolderId&&r('span',null,`· ${hN(t.holderId)}`)
+        )
+      ),
+      r('span',{style:{fontSize:'0.88rem',fontWeight:700,color:col,whiteSpace:'nowrap'}},(t.type==='income'?'+':t.type==='spending'?'-':'')+fmt(t.amount)),
+      onDel&&r('button',{onClick:onDel,style:{background:C.redBg,border:`1px solid ${C.red}22`,borderRadius:'8px',width:'28px',height:'28px',cursor:'pointer',color:C.red,fontSize:'1.1rem',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,flexShrink:0,lineHeight:1}},'×'),
+      onRest&&r('button',{onClick:onRest,style:{background:C.greenBg,color:C.green,border:'none',borderRadius:'7px',padding:'3px 7px',cursor:'pointer',fontSize:'0.65rem',fontWeight:700}},'↩')
+    );
+  }
+
+  if(!loaded)return r('div',{style:{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#312E81 0%,#4338CA 40%,#6366F1 100%)'}},
+    r('div',{style:{fontFamily:'cursive',fontSize:'2.5rem',color:'white'}},'Jimikki'),
+    r('div',{style:{fontSize:'0.8rem',color:'rgba(255,255,255,0.6)',marginTop:'0.5rem'}},'Loading…')
+  );
+
+  if(loggedIn===false)return r(LoginScreen,null);
+
+  // Logged in but no PIN set yet → force PIN setup
+  if(loggedIn&&loaded&&!pinHash)return r(SetPinScreen,{onDone:h=>{setPinHash(h);setPinUnlocked(true);}});
+
+  // PIN set but not unlocked this session → show PIN entry
+  if(loggedIn&&loaded&&pinHash&&!pinUnlocked)return r(EnterPinScreen,{email:userEmail,onUnlock:(h,onFail)=>{if(h===pinHash){setPinUnlocked(true);}else{onFail();}}});
+
+  return r('div',{className:'desktop-shell',style:{minHeight:'100vh',background:C.bg,maxWidth:'480px',margin:'0 auto',fontFamily:'"Inter",system-ui,sans-serif',color:C.text}},
+
+    /* ── DESKTOP SIDEBAR (hidden on mobile via CSS) ── */
+    r('aside',{className:'desktop-sidebar',style:{display:'none',flexDirection:'column',background:'white',borderRight:`1px solid ${C.border}`,padding:'1.5rem 1rem',gap:'0.5rem',position:'sticky',top:0,height:'100vh',overflowY:'auto'}},
+      r('div',{style:{fontFamily:'cursive',fontSize:'1.6rem',color:C.accent,fontWeight:900,letterSpacing:'-1px',marginBottom:'1.5rem',paddingLeft:'0.5rem'}},'Jimikki'),
+      ...[['home','🏠','Home'],['analytics','📊','Analytics']].map(([v,icon,label])=>
+        r('button',{key:v,onClick:()=>setView(v),style:{display:'flex',alignItems:'center',gap:'10px',padding:'0.7rem 1rem',borderRadius:'14px',border:'none',background:view===v?C.accentBg:'transparent',color:view===v?C.accent:C.sub,cursor:'pointer',fontWeight:view===v?700:500,fontSize:'0.9rem',textAlign:'left',width:'100%',transition:'background 0.15s'}},
+          r('span',{style:{fontSize:'1.1rem'}},icon), label
+        )
+      ),
+      r('button',{onClick:()=>setAiOpen(true),style:{display:'flex',alignItems:'center',gap:'10px',padding:'0.7rem 1rem',borderRadius:'14px',border:'none',background:'linear-gradient(135deg,#4F46E5,#7C3AED)',color:'white',cursor:'pointer',fontWeight:600,fontSize:'0.9rem',marginTop:'0.5rem',width:'100%'}},
+        r('span',{style:{fontSize:'1.1rem'}},'✦'), 'Ask AI'
+      ),
+      r('button',{onClick:()=>setSidebar(true),style:{display:'flex',alignItems:'center',gap:'10px',padding:'0.7rem 1rem',borderRadius:'14px',border:`1px solid ${C.border}`,background:'white',color:C.sub,cursor:'pointer',fontWeight:500,fontSize:'0.9rem',width:'100%',marginTop:'0.25rem'}},
+        r('span',{style:{fontSize:'1.1rem'}},'⚙️'), 'Settings'
+      ),
+      r('div',{style:{flex:1}}),
+      userEmail&&r('div',{style:{fontSize:'0.7rem',color:C.muted,padding:'0.5rem',borderRadius:'10px',background:C.bg,wordBreak:'break-all'}},userEmail),
+      r('button',{onClick:()=>{setSidebar(false);setPinHash(null);setPinUnlocked(false);},style:{display:'flex',alignItems:'center',gap:'8px',padding:'0.6rem 1rem',borderRadius:'12px',border:`1px solid ${C.accent}`,background:'white',color:C.accent,cursor:'pointer',fontSize:'0.78rem',fontWeight:700,width:'100%',marginTop:'0.35rem'}},'🔑 Change PIN'),
+      r('a',{href:'/api/auth/logout',style:{display:'flex',alignItems:'center',gap:'8px',padding:'0.6rem 1rem',borderRadius:'12px',background:C.redBg,color:C.red,textDecoration:'none',fontSize:'0.78rem',fontWeight:700,marginTop:'0.35rem'}},'↩ Sign out')
+    ),
+
+    /* ── MOBILE + DESKTOP MAIN CONTENT ── */
+    r('div',{className:'desktop-main',style:{flex:1,minWidth:0}},
+
+    toast&&r('div',{style:{position:'fixed',top:'1rem',left:'50%',transform:'translateX(-50%)',zIndex:2000,background:C.text,color:'white',padding:'0.55rem 1.25rem',borderRadius:'999px',fontSize:'0.78rem',whiteSpace:'nowrap',boxShadow:'0 4px 20px rgba(0,0,0,0.2)'}},toast),
+    pendingTxn&&r(DeleteConfirmModal,{txn:pendingTxn,bName:bN,ibName:ibN,hName:hN,onConfirm:confirmDel,onCancel:()=>setPendingDelId(null)}),
+    hFilterOpen&&r(HomeFilterPanel,{filter:hFilter,onChange:setHFilter,onClose:()=>setHFilterOpen(false)}),
+    aFilterOpen&&r(AnalyticsFilterModal,{timeFilter:aFilter,holderFilter:aHFilter,bucketFilter:aBFilter,holders,actExpB,actIncB,onApply:handleAFilter,onClose:()=>setAFilterOpen(false)}),
+
+    /* ── FLOATING AI BUTTON (simple, clean) ── */
+    !aiOpen&&r('button',{
+      className:'ai-fab',
+      onClick:()=>setAiOpen(true),
+      title:'Ask Jimikki AI',
+      style:{
+        position:'fixed',bottom:'80px',right:'16px',
+        width:'44px',height:'44px',borderRadius:'50%',border:'none',cursor:'pointer',
+        background:'linear-gradient(135deg,#4F46E5,#7C3AED)',
+        display:'flex',alignItems:'center',justifyContent:'center',
+        boxShadow:'0 6px 20px rgba(79,70,229,0.5)',
+        animation:'aiShake 5s ease-in-out infinite',
+        zIndex:150,transition:'transform 0.15s'
+      }
+    },
+      r('svg',{width:22,height:22,viewBox:'0 0 24 24',fill:'none',stroke:'white',strokeWidth:1.8,strokeLinecap:'round',strokeLinejoin:'round'},
+        r('path',{d:'M12 2L13.5 8.5L20 10L13.5 11.5L12 18L10.5 11.5L4 10L10.5 8.5Z',fill:'white',stroke:'none'}),
+        r('path',{d:'M19 2L19.8 4.2L22 5L19.8 5.8L19 8L18.2 5.8L16 5L18.2 4.2Z',fill:'rgba(255,255,255,0.7)',stroke:'none'}),
+        r('path',{d:'M5 17L5.5 18.5L7 19L5.5 19.5L5 21L4.5 19.5L3 19L4.5 18.5Z',fill:'rgba(255,255,255,0.6)',stroke:'none'})
+      )
+    ),
+
+    /* ── FULL SCREEN AI CHAT ── */
+    aiOpen&&r('div',{style:{
+      position:'fixed',inset:0,zIndex:500,
+      background:'#F4F6FB',
+      display:'flex',flexDirection:'column',
+      animation:'chatFadeIn 0.2s ease',
+      maxWidth:'480px',margin:'0 auto'
+    }},
+
+      /* Header */
+      r('div',{style:{
+        background:'linear-gradient(135deg,#4F46E5 0%,#7C3AED 100%)',
+        padding:'0.9rem 1rem 0.9rem',
+        display:'flex',alignItems:'center',gap:'0.75rem',
+        flexShrink:0,
+        paddingTop:'max(0.9rem, env(safe-area-inset-top))'
+      }},
+        r('button',{
+          onClick:()=>setAiOpen(false),
+          style:{
+            background:'rgba(255,255,255,0.15)',border:'none',borderRadius:'10px',
+            color:'white',cursor:'pointer',padding:'6px 10px',fontSize:'0.85rem',
+            fontWeight:700,flexShrink:0,display:'flex',alignItems:'center',gap:'4px'
+          }
+        },
+          r('svg',{width:16,height:16,viewBox:'0 0 24 24',fill:'none',stroke:'white',strokeWidth:2.5,strokeLinecap:'round'},
+            r('polyline',{points:'15 18 9 12 15 6'})
+          )
+        ),
+        r('div',{style:{
+          width:'36px',height:'36px',borderRadius:'50%',
+          background:'rgba(255,255,255,0.2)',
+          display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0
+        }},
+          r('svg',{width:18,height:18,viewBox:'0 0 24 24',fill:'white'},
+            r('path',{d:'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z'})
+          )
+        ),
+        r('div',{style:{flex:1,minWidth:0}},
+          r('div',{style:{fontWeight:700,fontSize:'0.95rem',color:'white',letterSpacing:'-0.2px'}},'Jimikki AI'),
+          r('div',{style:{fontSize:'0.65rem',color:'rgba(255,255,255,0.72)',marginTop:'2px'}},
+            aiLoading?'✦ Thinking…':'● Ready to help with your finances'
+          )
+        )
+      ),
+
+      /* Messages */
+      r('div',{style:{
+        flex:1,overflowY:'auto',padding:'1rem',
+        display:'flex',flexDirection:'column',gap:'0.85rem'
+      }},
+        /* Quick chips — only show on first load */
+        aiMessages.length===1&&r('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px',marginBottom:'0.5rem'}},
+          ...['💰 Total wealth?','📊 Top spending?','📅 Monthly savings?','↕️ Income vs spending'].map(q=>{
+            const clean=q.replace(/^[^\s]+\s/,'');
+            return r('button',{key:q,
+              onClick:()=>{
+                const msg=clean;
+                setAiMessages(h=>[...h,{role:'user',content:msg}]);
+                setAiLoading(true);
+                fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
+                  body:JSON.stringify({message:msg,history:aiMessages})
+                }).then(r=>r.json()).then(d=>setAiMessages(h=>[...h,{role:'assistant',content:d.reply||d.error||'Sorry!'}]))
+                  .catch(()=>setAiMessages(h=>[...h,{role:'assistant',content:'⚠️ Network error. Try again.'}]))
+                  .finally(()=>setAiLoading(false));
+              },
+              style:{
+                padding:'8px 14px',borderRadius:'999px',
+                border:`1.5px solid ${C.accent}25`,
+                background:'white',color:C.accent,cursor:'pointer',
+                fontSize:'0.75rem',fontWeight:600,
+                boxShadow:'0 1px 4px rgba(0,0,0,0.06)'
+              }
+            },q);
+          })
+        ),
+
+        ...aiMessages.map((m,i)=>r('div',{key:i,style:{
+          display:'flex',
+          justifyContent:m.role==='user'?'flex-end':'flex-start',
+          animation:'chatBubbleIn 0.2s ease'
+        }},
+          r('div',Object.assign({},{style:{
+            maxWidth:'82%',
+            padding:'0.75rem 1rem',
+            borderRadius:m.role==='user'?'20px 20px 5px 20px':'20px 20px 20px 5px',
+            background:m.role==='user'?'linear-gradient(135deg,#4F46E5,#7C3AED)':'white',
+            color:m.role==='user'?'white':C.text,
+            fontSize:'0.85rem',lineHeight:'1.55',
+            boxShadow:m.role==='user'?'0 3px 12px rgba(79,70,229,0.3)':'0 1px 6px rgba(0,0,0,0.07)',
+            border:m.role==='user'?'none':'1px solid #E8ECF4',
+            wordBreak:'break-word'
+          }},m.role==='assistant'?{dangerouslySetInnerHTML:{__html:formatAIMessage(m.content)}}:{}),
+          m.role==='user'?m.content:undefined)
+        )),
+
+        /* Typing indicator */
+        aiLoading&&r('div',{style:{display:'flex',justifyContent:'flex-start'}},
+          r('div',{style:{
+            padding:'0.8rem 1.1rem',borderRadius:'20px 20px 20px 5px',
+            background:'white',border:'1px solid #E8ECF4',
+            display:'flex',gap:'5px',alignItems:'center',
+            boxShadow:'0 1px 6px rgba(0,0,0,0.07)'
+          }},
+            ...[0,1,2].map(i=>r('span',{key:i,style:{
+              width:'8px',height:'8px',borderRadius:'50%',
+              background:C.accent,display:'inline-block',
+              animation:`typingDot 1.2s ease-in-out ${i*0.18}s infinite`
+            }}))
+          )
+        ),
+
+        r('div',{ref:aiEndRef})
+      ),
+
+      /* Input bar */
+      r('div',{style:{
+        padding:'0.75rem 0.85rem',
+        paddingBottom:'max(0.75rem, env(safe-area-inset-bottom))',
+        borderTop:'1px solid #E8ECF4',
+        display:'flex',gap:'10px',alignItems:'flex-end',
+        background:'white',flexShrink:0
+      }},
+        r('input',{
+          ref:aiInputRef,
+          value:aiInput,
+          onChange:ev=>setAiInput(ev.target.value),
+          onKeyDown:ev=>{if(ev.key==='Enter'&&!ev.shiftKey){ev.preventDefault();sendAiMessage();}},
+          placeholder:'Ask anything about your money…',
+          style:{
+            flex:1,border:'1.5px solid #E8ECF4',borderRadius:'14px',
+            padding:'0.7rem 1rem',fontSize:'0.88rem',outline:'none',
+            background:'#F4F6FB',fontFamily:'inherit',color:C.text,
+            transition:'border-color 0.2s',lineHeight:'1.4'
+          },
+          onFocus:ev=>ev.target.style.borderColor=C.accent,
+          onBlur:ev=>ev.target.style.borderColor='#E8ECF4'
+        }),
+        r('button',{
+          onClick:sendAiMessage,
+          disabled:!aiInput.trim()||aiLoading,
+          style:{
+            width:'44px',height:'44px',borderRadius:'14px',border:'none',flexShrink:0,
+            background:(!aiInput.trim()||aiLoading)?'#E8ECF4':'linear-gradient(135deg,#4F46E5,#7C3AED)',
+            cursor:(!aiInput.trim()||aiLoading)?'not-allowed':'pointer',
+            display:'flex',alignItems:'center',justifyContent:'center',
+            transition:'all 0.2s',
+            boxShadow:(!aiInput.trim()||aiLoading)?'none':'0 3px 10px rgba(79,70,229,0.35)'
+          }
+        },
+          r('svg',{width:18,height:18,viewBox:'0 0 24 24',fill:'none',
+            stroke:(!aiInput.trim()||aiLoading)?C.muted:'white',
+            strokeWidth:2.5,strokeLinecap:'round',strokeLinejoin:'round'},
+            r('line',{x1:22,y1:2,x2:11,y2:13}),
+            r('polygon',{points:'22 2 15 22 11 13 2 9 22 2'})
+          )
+        )
+      )
+    ),
+
+    fabOpen&&r('div',{style:{position:'fixed',inset:0,zIndex:300,display:'flex',flexDirection:'column',justifyContent:'flex-end'}},
+      r('div',{style:{position:'absolute',inset:0,background:'rgba(15,18,40,0.5)',backdropFilter:'blur(6px)'},onClick:()=>{setFabOpen(false);setFabMode(null);}}),
+      r('div',{style:{position:'relative',background:'white',borderRadius:'28px 28px 0 0',padding:'1.25rem 1.25rem 7rem',maxWidth:'480px',width:'100%',margin:'0 auto',boxShadow:'0 -8px 40px rgba(0,0,0,0.12)',maxHeight:'90vh',overflowY:'auto'}},
+        r('div',{style:{width:'36px',height:'4px',borderRadius:'2px',background:C.border,margin:'0 auto 1.25rem'}}),
+        successFlash
+          ?r('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'2.5rem 1rem 3rem',animation:'jimSuccessPop 0.45s cubic-bezier(0.34,1.56,0.64,1)'}},
+            r('div',{style:{position:'relative',width:'96px',height:'96px',marginBottom:'1.5rem'}},
+              r('div',{style:{position:'absolute',inset:0,borderRadius:'50%',background:successFlash.ring,animation:'jimRipple 1.2s ease-out infinite'}}),
+              r('div',{style:{position:'relative',width:'96px',height:'96px',borderRadius:'50%',background:successFlash.bg,border:`3px solid ${successFlash.ring}`,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:`0 12px 40px ${successFlash.col}40`}},
+                r('svg',{width:44,height:44,viewBox:'0 0 44 44',fill:'none'},
+                  r('circle',{cx:22,cy:22,r:20,stroke:successFlash.col,strokeWidth:2.5,fill:'none',opacity:0.25}),
+                  r('path',{d:'M12 22.5 L19.5 30 L32 15',stroke:successFlash.col,strokeWidth:3.5,strokeLinecap:'round',strokeLinejoin:'round',fill:'none',strokeDasharray:40,strokeDashoffset:0,style:{animation:'jimCheckDraw 0.45s ease 0.1s both'}})
+                )
+              )
+            ),
+            r('div',{style:{fontWeight:800,fontSize:'1.4rem',color:C.text,marginBottom:'0.3rem'}},successFlash.label),
+            r('div',{style:{fontWeight:800,fontSize:'2.1rem',color:successFlash.col,letterSpacing:'-1.5px',marginBottom:'0.3rem'}},fmt(successFlash.amount)),
+            r('div',{style:{fontSize:'0.75rem',color:C.muted}},successFlash.sub)
+          )
+          :!fabMode
+          ?r('div',null,
+            r('div',{style:{fontWeight:800,fontSize:'1.1rem',color:C.text,marginBottom:'0.35rem'}},'New Entry'),
+            r('div',{style:{fontSize:'0.73rem',color:C.sub,marginBottom:'1.25rem'}},'Choose what to record'),
+            r('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'0.65rem'}},
+              ...[{m:'income',emoji:'⬇️',label:'Income',sub:'Money in',col:C.green,bg:C.greenBg},{m:'spending',emoji:'⬆️',label:'Spending',sub:'Money out',col:C.red,bg:C.redBg},{m:'swap',emoji:'↔️',label:'Transfer',sub:'Move funds',col:C.blue,bg:'#EFF6FF'}].map(({m,emoji,label,sub,col,bg})=>
+                r('button',{key:m,onClick:()=>openFab(m),style:{display:'flex',flexDirection:'column',alignItems:'center',padding:'1.25rem 0.5rem',borderRadius:'18px',border:`1.5px solid ${col}30`,background:bg,cursor:'pointer',gap:'0.35rem'}},r('span',{style:{fontSize:'1.75rem'}},emoji),r('span',{style:{fontWeight:700,fontSize:'0.83rem',color:col}},label),r('span',{style:{fontSize:'0.62rem',color:C.sub}},sub))
+              )
+            )
+          )
+          :r('div',{style:{animation:shakeActive?'jimShake 0.55s ease':'none'}},
+            r('div',{style:{display:'flex',alignItems:'center',gap:'0.65rem',marginBottom:'1.1rem'}},
+              r('button',{onClick:()=>setFabMode(null),style:{background:C.bg,border:`1px solid ${C.border}`,borderRadius:'10px',padding:'0.35rem 0.7rem',cursor:'pointer',fontSize:'0.8rem',color:C.sub}},'← Back'),
+              r('span',{style:{fontWeight:700,fontSize:'0.95rem',color:fabMode==='income'?C.green:fabMode==='spending'?C.red:C.blue}},fabMode==='income'?'⬇️ Income':fabMode==='spending'?'⬆️ Spending':'↔️ Transfer')
+            ),
+            actH.length===0&&r('div',{style:{background:C.redBg,border:`1px solid ${C.red}30`,borderRadius:'12px',padding:'0.7rem',fontSize:'0.78rem',color:C.red,marginBottom:'0.85rem'}},'⚠️ No holders. Add one from ☰ first.'),
+            r('div',{style:{display:'flex',flexDirection:'column',gap:'0.8rem'}},
+              r('div',null,r(SL,null,'AMOUNT'),r(FI,{value:jAmt,onChange:ev=>setJAmt(ev.target.value),type:'number',min:'0',placeholder:'0.00',autoFocus:true,style:{fontSize:'1.35rem',fontWeight:800}})),
+              fabMode==='income'&&r('div',null,r(SL,{req:true},'INCOME SOURCE'),r(FS,{value:jIncB,onChange:ev=>setJIncB(ev.target.value)},r('option',{value:''},'— Choose —'),...actIncB.map(b=>r('option',{key:b.id,value:b.id},b.name)))),
+              fabMode==='spending'&&r('div',null,r(SL,{req:true},'SPENDING CATEGORY'),r(FS,{value:jExpB,onChange:ev=>setJExpB(ev.target.value)},r('option',{value:''},'— Choose —'),...actExpB.map(b=>r('option',{key:b.id,value:b.id},b.name)))),
+              r('div',null,r(SL,{req:fabMode==='swap'||otherNeedsNote},fabMode==='swap'?'NOTE (required)':otherNeedsNote?'NOTE (required for "Other" ≥ ₹1,000)':'NOTE (optional)'),r(FI,{value:jNote,onChange:ev=>setJNote(ev.target.value),placeholder:fabMode==='swap'?'e.g. Rent payment…':fabMode==='spending'?'e.g. Swiggy, petrol…':'e.g. Salary June…'})),
+              r('div',{style:{display:'grid',gridTemplateColumns:fabMode==='swap'?'1fr 1fr':'1fr',gap:'0.6rem'}},
+                r('div',null,r(SL,null,fabMode==='swap'?'FROM':'HOLDER'),r(FS,{value:jFrom,onChange:ev=>setJFrom(ev.target.value)},r('option',{value:''},'Select'),...actH.map(x=>r('option',{key:x.id,value:x.id},`${x.name} (${fmt(x.balance)})`))),),
+                fabMode==='swap'&&r('div',null,r(SL,null,'TO'),r(FS,{value:jTo,onChange:ev=>setJTo(ev.target.value)},r('option',{value:''},'Select'),...actH.filter(x=>x.id!==jFrom).map(x=>r('option',{key:x.id,value:x.id},x.name))))
+              ),
+              r('div',null,r(SL,null,'DATE'),r(FI,{type:'date',value:jDate,onChange:ev=>setJDate(ev.target.value)})),
+              r('button',{onClick:submitTxn,style:{padding:'0.8rem',borderRadius:'14px',border:'none',background:fabMode==='income'?C.green:fabMode==='spending'?C.red:C.blue,color:'white',fontWeight:800,fontSize:'0.95rem',cursor:'pointer'}},`Record ${fabMode==='income'?'Income':fabMode==='spending'?'Spending':'Transfer'}`)
+            )
+          )
+      )
+    ),
+
+    sidebar&&r('div',{style:{position:'fixed',inset:0,zIndex:200,display:'flex'}},
+      r('div',{style:{position:'absolute',inset:0,background:'rgba(0,0,0,0.3)',backdropFilter:'blur(4px)'},onClick:()=>setSidebar(false)}),
+      r('div',{style:{position:'relative',marginLeft:'auto',width:'300px',background:'white',height:'100%',overflowY:'auto',padding:'1.5rem 1.1rem',display:'flex',flexDirection:'column',gap:'0.4rem',boxShadow:'-4px 0 40px rgba(0,0,0,0.12)'}},
+        r('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.75rem'}},r('span',{style:{fontFamily:'cursive',fontSize:'1.5rem',color:C.accent}},'Jimikki'),r('button',{onClick:()=>setSidebar(false),style:{background:C.bg,border:`1px solid ${C.border}`,borderRadius:'8px',padding:'0.3rem 0.6rem',cursor:'pointer',color:C.sub}},'✕')),
+
+        /* ── USER EMAIL + SIGN OUT ── */
+        userEmail&&r('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',background:C.accentBg,borderRadius:'12px',padding:'0.6rem 0.75rem',marginBottom:'0.25rem',gap:'0.5rem'}},
+          r('div',{style:{minWidth:0}},
+            r('div',{style:{fontSize:'0.58rem',fontWeight:700,color:C.muted,letterSpacing:'0.08em'}},'SIGNED IN AS'),
+            r('div',{style:{fontSize:'0.72rem',fontWeight:600,color:C.accent,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},userEmail)
+          ),
+          r('div',{style:{display:'flex',gap:'6px',flexShrink:0}},
+            r('button',{onClick:()=>{setSidebar(false);setPinHash(null);setPinUnlocked(false);},style:{fontSize:'0.65rem',color:C.accent,fontWeight:700,border:`1px solid ${C.accent}`,background:'white',padding:'4px 10px',borderRadius:'6px',whiteSpace:'nowrap',cursor:'pointer'}},'Change PIN'),
+            r('a',{href:'/api/auth/logout',style:{fontSize:'0.65rem',color:C.red,fontWeight:700,textDecoration:'none',background:C.redBg,padding:'4px 10px',borderRadius:'6px',whiteSpace:'nowrap'}},'Sign out')
+          )
+        ),
+
+        /* ── GOOGLE SHEET SYNC STATUS (traffic light) ── */
+        (()=>{
+          const palette = syncStatus==='error'
+            ? {bg:'#FEF2F2',border:'#FECACA',label:'#B91C1C',main:'#DC2626'}
+            : syncStatus==='syncing'
+            ? {bg:'#FFFBEB',border:'#FDE68A',label:'#92400E',main:'#D97706'}
+            : {bg:'#F0FDF4',border:'#BBF7D0',label:'#166534',main:'#16A34A'};
+          const statusText = syncStatus==='syncing' ? 'Syncing…'
+            : syncStatus==='error' ? 'Update failed — retrying…'
+            : sheetUrl ? 'Updated' : 'Waiting for first save…';
+          return r('div',{style:{background:palette.bg,border:`1.5px solid ${palette.border}`,borderRadius:'12px',padding:'0.6rem 0.75rem',marginBottom:'0.25rem',display:'flex',flexDirection:'column',gap:'2px'}},
+            r('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'0.5rem'}},
+              r('div',{style:{minWidth:0,flex:1}},
+                r('div',{style:{fontSize:'0.58rem',fontWeight:700,color:palette.label,letterSpacing:'0.08em',display:'flex',alignItems:'center',gap:'5px'}},
+                  r('span',{style:{width:'7px',height:'7px',borderRadius:'50%',background:palette.main,display:'inline-block',flexShrink:0}}),
+                  '📊 MY GOOGLE SHEET'
+                ),
+                r('div',{style:{fontSize:'0.72rem',fontWeight:600,color:palette.main}}, statusText)
+              ),
+              sheetUrl&&r('a',{href:sheetUrl,target:'_blank',rel:'noopener noreferrer',title:'Open sheet',style:{fontSize:'1rem',textDecoration:'none',flexShrink:0}},'↗️')
+            ),
+            lastSyncedAt&&r('div',{style:{fontSize:'0.62rem',color:C.muted}}, `Last updated: ${formatSyncTime(lastSyncedAt)}`),
+            syncStatus==='error'&&r('button',{onClick:retrySyncNow,style:{alignSelf:'flex-start',marginTop:'2px',fontSize:'0.62rem',fontWeight:700,color:'#B91C1C',background:'white',border:'1px solid #FECACA',borderRadius:'6px',padding:'3px 8px',cursor:'pointer'}},'Retry now')
+          );
+        })(),
+
+        ...[['home','🏠 Home'],['analytics','📊 Analytics']].map(([v,l])=>r('button',{key:v,onClick:()=>{setView(v);setSidebar(false);},style:{textAlign:'left',padding:'0.6rem 0.85rem',border:`1px solid ${view===v?C.accent+'60':C.border}`,borderRadius:'12px',background:view===v?C.accentBg:'transparent',fontWeight:view===v?700:400,cursor:'pointer',fontSize:'0.88rem',color:view===v?C.accent:C.sub}},l)),
+        r('div',{style:{height:'1px',background:C.border,margin:'0.5rem 0'}}),
+        r('div',{style:{fontSize:'0.6rem',fontWeight:700,color:C.muted,letterSpacing:'0.1em'}},'MONEY HOLDERS'),
+        actH.length===0&&r('div',{style:{fontSize:'0.78rem',color:C.muted,textAlign:'center',padding:'0.65rem'}},'No holders yet'),
+        ...actH.map(x=>r('div',{key:x.id,style:{display:'flex',alignItems:'center',gap:'0.45rem',padding:'0.5rem 0.7rem',background:C.bg,borderRadius:'12px',border:`1px solid ${C.border}`}},
+          r('div',{style:{width:'8px',height:'8px',borderRadius:'50%',background:x.isPrimary?C.accent:C.muted,flexShrink:0}}),
+          r('div',{style:{flex:1,minWidth:0}},r('div',{style:{fontSize:'0.82rem',fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},x.name),r('div',{style:{fontSize:'0.68rem',color:C.sub}},fmt(x.balance))),
+          !x.isPrimary&&r('button',{onClick:()=>setPrimary(x.id),style:{background:'none',border:`1px solid ${C.border}`,borderRadius:'6px',padding:'2px 6px',cursor:'pointer',color:C.muted,fontSize:'0.62rem'}},'★'),
+          !x.isPrimary&&r('button',{onClick:()=>tryDelHolder(x.id),title:x.balance>0?'Clear balance to ₹0 before deleting':'Delete holder',style:{background:'none',border:'none',cursor:x.balance>0?'not-allowed':'pointer',color:x.balance>0?C.muted:C.red,fontSize:'1rem',opacity:x.balance>0?0.4:0.75}},x.balance>0?'🔒':'×')
+        )),
+        r('div',{style:{display:'flex',gap:'0.35rem'}},r(FI,{value:nhName,onChange:ev=>setNhName(ev.target.value),onKeyDown:ev=>ev.key==='Enter'&&addHolder(),placeholder:'Name',style:{flex:2,minWidth:0}}),r(FI,{value:nhBal,onChange:ev=>setNhBal(ev.target.value),onKeyDown:ev=>ev.key==='Enter'&&addHolder(),placeholder:'₹',type:'number',min:'0',style:{flex:1,minWidth:0}}),r('button',{onClick:addHolder,style:{background:C.accent,color:'white',border:'none',borderRadius:'12px',padding:'0.5rem 0.75rem',cursor:'pointer',fontWeight:700,fontSize:'1rem',flexShrink:0}},'+')
+        ),
+        delH.length>0&&r('div',null,r('div',{style:{fontSize:'0.6rem',fontWeight:700,color:C.muted,marginTop:'0.25rem'}},'ARCHIVED'),...delH.map(x=>r('div',{key:x.id,style:{display:'flex',alignItems:'center',gap:'0.4rem',padding:'0.45rem 0.7rem',background:'#FFFBEB',borderRadius:'10px',border:'1px solid #FDE68A'}},r('div',{style:{flex:1,fontSize:'0.78rem',color:'#92400E',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},`${x.name} (${fmt(x.balance)})`),r('button',{onClick:()=>restHolder(x.id),style:{fontSize:'0.68rem',background:'#FEF3C7',color:'#92400E',border:'1px solid #FDE68A',borderRadius:'6px',padding:'2px 8px',cursor:'pointer'}},'↩')))),
+        r('div',{style:{height:'1px',background:C.border,margin:'0.5rem 0'}}),
+        r('div',{style:{fontSize:'0.6rem',fontWeight:700,color:C.muted}},'💸 EXPENSE BUCKETS'),
+        r('div',{style:{fontSize:'0.62rem',color:C.muted,marginBottom:'4px'}},'Removing keeps past transactions intact.'),
+        ...actExpB.map(b=>r('div',{key:b.id,style:{display:'flex',alignItems:'center',gap:'0.5rem',padding:'0.45rem 0.7rem',background:C.bg,borderRadius:'10px',border:`1px solid ${C.border}`}},r('div',{style:{width:'9px',height:'9px',borderRadius:'3px',background:b.color,flexShrink:0}}),r('span',{style:{flex:1,fontSize:'0.8rem',fontWeight:500,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},b.name+(b.fixed?' 🔒':'')),!b.fixed&&r('button',{onClick:()=>delExpB(b.id),style:{background:'none',border:'none',cursor:'pointer',color:C.red,fontSize:'1rem',opacity:0.7,lineHeight:1,padding:'0 2px'}},'×'))),
+        r('div',{style:{display:'flex',gap:'0.35rem',alignItems:'center',marginBottom:'0.25rem'}},r(FI,{value:nbExpName,onChange:ev=>setNbExpName(ev.target.value),onKeyDown:ev=>ev.key==='Enter'&&addExpB(),placeholder:'New expense bucket',style:{flex:1,minWidth:0}}),r('div',{style:{display:'flex',gap:'3px'}},...PALETTE.slice(0,4).map(c=>r('button',{key:c,onClick:()=>setNbExpColor(c),style:{width:'18px',height:'18px',borderRadius:'4px',background:c,border:nbExpColor===c?'2px solid #1A1D2E':'2px solid transparent',cursor:'pointer'}}))),r('button',{onClick:addExpB,style:{background:C.red,color:'white',border:'none',borderRadius:'10px',padding:'0.45rem 0.65rem',cursor:'pointer',fontWeight:700}},'+')
+        ),
+        r('div',{style:{height:'1px',background:C.border,margin:'0.5rem 0'}}),
+        r('div',{style:{fontSize:'0.6rem',fontWeight:700,color:C.muted}},'💰 INCOME BUCKETS'),
+        r('div',{style:{fontSize:'0.62rem',color:C.muted,marginBottom:'4px'}},'Removing keeps past transactions intact.'),
+        ...actIncB.map(b=>r('div',{key:b.id,style:{display:'flex',alignItems:'center',gap:'0.5rem',padding:'0.45rem 0.7rem',background:C.bg,borderRadius:'10px',border:`1px solid ${C.border}`}},r('div',{style:{width:'9px',height:'9px',borderRadius:'3px',background:b.color,flexShrink:0}}),r('span',{style:{flex:1,fontSize:'0.8rem',fontWeight:500,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},b.name+(b.fixed?' 🔒':'')),!b.fixed&&r('button',{onClick:()=>delIncB(b.id),style:{background:'none',border:'none',cursor:'pointer',color:C.red,fontSize:'1rem',opacity:0.7,lineHeight:1,padding:'0 2px'}},'×'))),
+        r('div',{style:{display:'flex',gap:'0.35rem',alignItems:'center'}},r(FI,{value:nbIncName,onChange:ev=>setNbIncName(ev.target.value),onKeyDown:ev=>ev.key==='Enter'&&addIncB(),placeholder:'New income bucket',style:{flex:1,minWidth:0}}),r('div',{style:{display:'flex',gap:'3px'}},...PALETTE.slice(0,4).map(c=>r('button',{key:c,onClick:()=>setNbIncColor(c),style:{width:'18px',height:'18px',borderRadius:'4px',background:c,border:nbIncColor===c?'2px solid #1A1D2E':'2px solid transparent',cursor:'pointer'}}))),r('button',{onClick:addIncB,style:{background:C.green,color:'white',border:'none',borderRadius:'10px',padding:'0.45rem 0.65rem',cursor:'pointer',fontWeight:700}},'+'))
+      )
+    ),
+
+    r('header',{className:'mobile-header',style:{position:'sticky',top:0,zIndex:100,background:'rgba(244,246,251,0.9)',backdropFilter:'blur(14px)',borderBottom:`1px solid ${C.border}`,padding:'0.85rem 1.1rem',display:'flex',justifyContent:'space-between',alignItems:'center'}},
+      r('span',{style:{fontFamily:'cursive',fontSize:'1.7rem',color:C.accent}},'Jimikki'),
+      r('button',{onClick:()=>setSidebar(true),style:{background:'white',border:`1px solid ${C.border}`,borderRadius:'10px',padding:'0.45rem 0.7rem',cursor:'pointer',display:'flex',flexDirection:'column',gap:'4px',boxShadow:'0 1px 4px rgba(0,0,0,0.06)'}},...[0,1,2].map(i=>r('span',{key:i,style:{display:'block',width:'18px',height:'2px',background:C.sub,borderRadius:'1px'}})))
+    ),
+
+    r('main',{className:'main-content-area',style:{padding:'1rem',paddingBottom:'7rem',display:'flex',flexDirection:'column',gap:'1rem'}},
+      view==='home'&&r('div',{style:{display:'flex',flexDirection:'column',gap:'1rem'}},
+        r('div',{style:{background:'linear-gradient(135deg,#4338CA 0%,#6366F1 60%,#818CF8 100%)',borderRadius:'24px',padding:'1.75rem 1.5rem',position:'relative',overflow:'hidden',boxShadow:'0 8px 32px rgba(79,70,229,0.3)'}},
+          r('div',{style:{position:'absolute',top:'-30px',right:'-20px',width:'130px',height:'130px',borderRadius:'50%',background:'rgba(255,255,255,0.08)'}}),
+          r('div',{style:{position:'absolute',bottom:'-40px',left:'10px',width:'90px',height:'90px',borderRadius:'50%',background:'rgba(255,255,255,0.05)'}}),
+          r('div',{style:{position:'relative'}},
+            r('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'0.5rem',flexWrap:'wrap'}},
+              r('div',null,
+                r('div',{style:{display:'flex',alignItems:'center',gap:'6px',marginBottom:'4px'}},
+                  r('div',{style:{fontSize:'0.58rem',fontWeight:700,color:'rgba(255,255,255,0.5)',letterSpacing:'0.12em'}},'CONSOLIDATED WEALTH'),
+                  r('button',{onClick:()=>setWealthHidden(v=>!v),style:{background:'none',border:'none',cursor:'pointer',padding:'1px 3px',opacity:0.7,lineHeight:1,flexShrink:0}},
+                    wealthHidden
+                      ?r('svg',{width:14,height:14,viewBox:'0 0 24 24',fill:'none',stroke:'rgba(255,255,255,0.7)',strokeWidth:2,strokeLinecap:'round'},r('path',{d:'M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19'}),r('line',{x1:1,y1:1,x2:23,y2:23}))
+                      :r('svg',{width:14,height:14,viewBox:'0 0 24 24',fill:'none',stroke:'rgba(255,255,255,0.7)',strokeWidth:2,strokeLinecap:'round'},r('path',{d:'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z'}),r('circle',{cx:12,cy:12,r:3}))
+                  )
+                ),
+                r('div',{style:{fontSize:'2.4rem',fontWeight:800,color:'white',letterSpacing:'-2px',lineHeight:1.1}},wealthHidden?'₹ ••••••':fmt(wealth(hHFilter)))
+              ),
+              r('button',{onClick:()=>setHFilterOpen(true),style:{display:'flex',alignItems:'center',gap:'5px',padding:'5px 10px',borderRadius:'999px',background:'rgba(255,255,255,0.2)',border:'1px solid rgba(255,255,255,0.3)',color:'white',cursor:'pointer',fontSize:'0.68rem',fontWeight:700,whiteSpace:'nowrap'}},'🗓 ',filterLabel(hFilter))
+            ),
+            r('div',{style:{display:'flex',gap:'0.5rem',marginTop:'1.1rem',minWidth:0}},
+              r('div',{style:{flex:1,minWidth:0}},r('div',{style:{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}},'IN'),r('div',{style:{fontSize:'0.95rem',fontWeight:700,color:'#A7F3D0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},wealthHidden?'••••':fmtS(hStats.inc))),
+              r('div',{style:{width:'1px',flexShrink:0,background:'rgba(255,255,255,0.15)'}}),
+              r('div',{style:{flex:1,minWidth:0}},r('div',{style:{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}},'OUT'),r('div',{style:{fontSize:'0.95rem',fontWeight:700,color:'#FCA5A5',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},wealthHidden?'••••':fmtS(hStats.spd))),
+              r('div',{style:{width:'1px',flexShrink:0,background:'rgba(255,255,255,0.15)'}}),
+              r('div',{style:{flex:1,minWidth:0}},r('div',{style:{fontSize:'0.58rem',color:'rgba(255,255,255,0.45)',letterSpacing:'0.08em'}},'NET'),r('div',{style:{fontSize:'0.95rem',fontWeight:700,color:hStats.net<0?'#FCA5A5':'white',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},wealthHidden?'••••':fmtS(hStats.net)))
+            )
+          )
+        ),
+        actH.length>0&&r('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}},
+          ...[{id:null,name:'All'},...actH].map(x=>r('button',{key:x.id||'all',onClick:()=>setHHFilter(x.id===null?null:(hHFilter===x.id?null:x.id)),style:{padding:'4px 12px',borderRadius:'999px',border:`1px solid ${(x.id===null?!hHFilter:hHFilter===x.id)?C.accent:C.border}`,background:(x.id===null?!hHFilter:hHFilter===x.id)?C.accentBg:'white',color:(x.id===null?!hHFilter:hHFilter===x.id)?C.accent:C.sub,cursor:'pointer',fontSize:'0.72rem',fontWeight:(x.id===null?!hHFilter:hHFilter===x.id)?700:400}},x.name))
+        ),
+        r(Card,null,
+          r('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'0.85rem',flexWrap:'wrap',gap:'0.5rem'}},
+            r('div',null,r('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text}},'Total Account Balance'),r('div',{style:{fontSize:'0.65rem',color:C.sub,marginTop:'2px'}},'Tap a dot → balance · ✦ Explore in Analytics')),
+            r(GranPills,{value:hGran,onChange:setHGran})
+          ),
+          r(BalanceAreaChart,{data:hBalData,height:200,onExplore:handleExplore})
+        ),
+        actH.length>0
+          ?r(Card,null,
+            r('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.85rem'}},
+              r('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text}},'Your Holdings'),
+              r('button',{onClick:()=>setHhAdd(v=>!v),style:{display:'flex',alignItems:'center',gap:'4px',padding:'4px 10px',borderRadius:'999px',border:`1px solid ${C.accent}`,background:C.accentBg,color:C.accent,cursor:'pointer',fontSize:'0.72rem',fontWeight:700}},hhAdd?'✕ Cancel':'+ Add')
+            ),
+            hhAdd&&r('div',{style:{display:'flex',gap:'6px',marginBottom:'0.85rem'}},
+              r(FI,{value:nhName,onChange:ev=>setNhName(ev.target.value),placeholder:'Name',style:{flex:2,minWidth:0}}),
+              r(FI,{value:nhBal,onChange:ev=>setNhBal(ev.target.value),placeholder:'₹ Balance',type:'number',min:'0',style:{flex:1,minWidth:0}}),
+              r('button',{onClick:()=>{addHolder();setHhAdd(false);},style:{background:C.accent,color:'white',border:'none',borderRadius:'12px',padding:'0.5rem 0.85rem',cursor:'pointer',fontWeight:700,flexShrink:0}},'Add')
+            ),
+            ...actH.map((x,i)=>r('div',{key:x.id,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'0.65rem 0',borderBottom:i<actH.length-1?`1px solid ${C.border}`:'none'}},
+              r('div',{style:{display:'flex',alignItems:'center',gap:'0.75rem'}},r('div',{style:{width:'38px',height:'38px',borderRadius:'12px',background:x.isPrimary?C.accentBg:C.bg,border:`1.5px solid ${x.isPrimary?C.accent:C.border}`,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:'0.92rem',color:x.isPrimary?C.accent:C.sub}},x.name.charAt(0).toUpperCase()),r('div',null,r('div',{style:{fontWeight:600,fontSize:'0.88rem',color:C.text}},x.name),x.isPrimary&&r('div',{style:{fontSize:'0.6rem',color:C.accent,marginTop:'1px'}},'Primary'))),
+              r('div',{style:{fontWeight:800,fontSize:'0.98rem',color:C.text}},fmt(x.balance))
+            ))
+          )
+          :r('div',{style:{background:'white',borderRadius:'20px',padding:'2.5rem 1.5rem',textAlign:'center',border:`1.5px dashed ${C.border}`}},
+            r('div',{style:{fontSize:'2rem',marginBottom:'0.75rem'}},'💳'),
+            r('div',{style:{fontWeight:700,color:C.text,marginBottom:'0.75rem'}},'No holdings yet'),
+            r('div',{style:{display:'flex',gap:'6px',justifyContent:'center'}},
+              r(FI,{value:nhName,onChange:ev=>setNhName(ev.target.value),placeholder:'Name',style:{flex:2,maxWidth:'130px'}}),
+              r(FI,{value:nhBal,onChange:ev=>setNhBal(ev.target.value),placeholder:'₹',type:'number',min:'0',style:{flex:1,maxWidth:'80px'}}),
+              r('button',{onClick:addHolder,style:{background:C.accent,color:'white',border:'none',borderRadius:'12px',padding:'0.5rem 0.85rem',cursor:'pointer',fontWeight:700}},'Add')
+            )
+          )
+      ),
+
+      view==='analytics'&&r('div',{style:{display:'flex',flexDirection:'column',gap:'1rem'}},
+        r('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'0.5rem'}},
+          r('div',null,r('div',{style:{fontWeight:700,fontSize:'0.95rem',color:C.text}},'Analytics'),r('div',{style:{fontSize:'0.65rem',color:C.sub,marginTop:'2px'}},aBadge())),
+          r('button',{onClick:()=>setAFilterOpen(true),style:{display:'flex',alignItems:'center',gap:'6px',padding:'8px 14px',borderRadius:'12px',border:`1.5px solid ${aActiveCount>0?C.accent:C.border}`,background:aActiveCount>0?C.accentBg:'white',color:aActiveCount>0?C.accent:C.sub,cursor:'pointer',fontWeight:700,fontSize:'0.78rem',whiteSpace:'nowrap',flexShrink:0}},
+            '⚙️ Filter',aActiveCount>0&&r('span',{style:{background:C.accent,color:'white',borderRadius:'999px',padding:'1px 7px',fontSize:'0.65rem',fontWeight:800}},aActiveCount)
+          )
+        ),
+        r('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'0.5rem'}},
+          ...[{l:'INCOME',v:fmt(aStats.inc),col:C.green},{l:'SPENDING',v:fmt(aStats.spd),col:C.red},{l:'NET',v:fmt(aStats.net),col:C.accent}].map(({l,v,col})=>
+            r('div',{key:l,style:{background:'white',borderRadius:'16px',padding:'0.85rem 0.5rem',border:`1px solid ${C.border}`,textAlign:'center',boxShadow:'0 2px 8px rgba(0,0,0,0.04)'}},r('div',{style:{fontSize:'0.55rem',fontWeight:700,color:C.muted,letterSpacing:'0.1em',marginBottom:'4px'}},l),r('div',{style:{fontSize:'0.78rem',fontWeight:800,color:col}},v))
+          )
+        ),
+        r('div',{style:{display:'flex',background:'white',borderRadius:'14px',padding:'4px',border:`1px solid ${C.border}`}},
+          ...[['flow','📈 Net Flow'],['buckets','🪣 Buckets'],['txns','📋 Transactions']].map(([v,l])=>r('button',{key:v,onClick:()=>setAView(v),style:{flex:1,padding:'0.45rem 0.25rem',borderRadius:'10px',border:'none',background:aView===v?C.accent:'transparent',color:aView===v?'white':C.sub,cursor:'pointer',fontWeight:700,fontSize:'0.72rem'}},l))
+        ),
+        aView==='flow'&&r(Card,null,
+          r('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'3px'}},'Net Savings — '+filterLabel(aFilter)),
+          r('div',{style:{fontSize:'0.65rem',color:C.sub,marginBottom:'0.85rem'}},'Last 12 months · tap a bar to see breakdown'),
+          aStats.inc===0&&aStats.spd===0?r('div',{style:{textAlign:'center',padding:'2rem',color:C.muted,fontSize:'0.82rem'}},'No transactions for this period'):r(NetBarChart,{data:buildNetData(actT.filter(t=>!aHFilter||t.holderId===aHFilter),aHFilter),height:190})
+        ),
+        aView==='buckets'&&r('div',{style:{display:'flex',flexDirection:'column',gap:'1rem'}},
+          r(Card,null,
+            r('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'1rem'}},r('div',{style:{width:'10px',height:'10px',borderRadius:'50%',background:C.green}}),r('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text}},'Income by Source')),
+            incStats.length===0?r('div',{style:{textAlign:'center',padding:'1.5rem',color:C.muted,fontSize:'0.8rem'}},'No income data for this period'):r('div',null,r('div',{style:{display:'flex',justifyContent:'center',marginBottom:'1.1rem'}},r(DonutChart,{data:incStats})),...incStats.map(b=>r(BucketRow,{key:b.id,b,total:b.total,grand:incTotal})))
+          ),
+          r(Card,null,
+            r('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'1rem'}},r('div',{style:{width:'10px',height:'10px',borderRadius:'50%',background:C.red}}),r('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text}},'Spending by Category')),
+            expStats.length===0?r('div',{style:{textAlign:'center',padding:'1.5rem',color:C.muted,fontSize:'0.8rem'}},'No spending data for this period'):r('div',null,r('div',{style:{display:'flex',justifyContent:'center',marginBottom:'1.1rem'}},r(DonutChart,{data:expStats})),...expStats.map(b=>r(BucketRow,{key:b.id,b,total:b.total,grand:expTotal})))
+          )
+        ),
+        aView==='txns'&&r(Card,null,
+          r('div',{style:{fontWeight:700,fontSize:'0.88rem',color:C.text,marginBottom:'0.75rem'}},'Transactions ',r('span',{style:{fontWeight:400,color:C.muted,fontSize:'0.72rem'}},`(${aFilteredT.length})`)),
+          aFilteredT.length===0?r('div',{style:{color:C.muted,fontSize:'0.82rem',textAlign:'center',padding:'2rem 0'}},'No transactions for this period'):aFilteredT.map(t=>r(TxnRow,{key:t.id,t,onDel:()=>setPendingDelId(t.id)})),
+          delT.length>0&&r('div',{style:{marginTop:'1.25rem'}},
+            r('button',{onClick:()=>setBinOpen(o=>!o),style:{display:'flex',alignItems:'center',gap:'6px',width:'100%',padding:'0.55rem 0.85rem',borderRadius:'12px',border:`1px solid ${binOpen?'#FDE68A':C.border}`,background:binOpen?'#FFFBEB':C.bg,cursor:'pointer',textAlign:'left'}},
+              r('span',{style:{fontSize:'0.95rem'}},'🗑️'),
+              r('span',{style:{fontWeight:700,fontSize:'0.82rem',color:C.text}},'Recycle Bin'),
+              r('span',{style:{fontWeight:400,color:C.muted,fontSize:'0.72rem',marginLeft:'2px'}},`(${delT.length})`),
+              r('span',{style:{marginLeft:'auto',color:C.muted,fontSize:'0.75rem',fontWeight:700}},binOpen?'▲ Hide':'▼ Show')
+            ),
+            binOpen&&r('div',{style:{background:'#FFFBEB',borderRadius:'14px',padding:'0.75rem 0.85rem',border:'1px solid #FDE68A',marginTop:'0.45rem'}},...delT.map(t=>r(TxnRow,{key:t.id,t,onRest:()=>restTxn(t.id)})))
+          )
+        )
+      )
+    ),
+
+    r('nav',{className:'mobile-nav',style:{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:'480px',background:'rgba(255,255,255,0.95)',backdropFilter:'blur(16px)',borderTop:`1px solid ${C.border}`,display:'flex',alignItems:'center',zIndex:90,height:'64px',boxShadow:'0 -2px 16px rgba(0,0,0,0.06)'}},
+      r('button',{onClick:()=>setView('home'),style:{flex:1,height:'100%',background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'2px',color:view==='home'?C.accent:C.muted}},r('span',{style:{fontSize:'1.1rem'}},'🏠'),r('span',{style:{fontSize:'0.6rem',fontWeight:view==='home'?700:400}},'Home')),
+      r('div',{style:{flex:'0 0 80px',display:'flex',justifyContent:'center',alignItems:'center'}},
+        r('button',{onClick:()=>{setFabOpen(true);setFabMode(null);},style:{width:'52px',height:'52px',borderRadius:'16px',background:C.accent,border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 6px 20px rgba(79,70,229,0.4)',transform:'translateY(-10px)',color:'white',flexShrink:0}},
+          r('svg',{width:24,height:24,viewBox:'0 0 24 24',fill:'none',stroke:'currentColor',strokeWidth:'2.5',strokeLinecap:'round'},r('line',{x1:12,y1:5,x2:12,y2:19}),r('line',{x1:5,y1:12,x2:19,y2:12}))
+        )
+      ),
+      r('button',{onClick:()=>setView('analytics'),style:{flex:1,height:'100%',background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'2px',color:view==='analytics'?C.accent:C.muted}},r('span',{style:{fontSize:'1.1rem'}},'📊'),r('span',{style:{fontSize:'0.6rem',fontWeight:view==='analytics'?700:400}},'Analytics'))
+    )
+  ) // end desktop-main
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Jimikki));
+</script>
+<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js');}</script>
+</body>
+</html>
