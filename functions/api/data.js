@@ -1,5 +1,3 @@
-
-
 export async function onRequestGet(context) {
   const email = context.data.email;
   try {
