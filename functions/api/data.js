@@ -44,7 +44,7 @@ export async function onRequestPost(context) {
       'INSERT OR REPLACE INTO user_data (email, data, updated_at) VALUES (?, ?, datetime("now"))'
     ).bind(email, body).run();
 
-    // Ensure user_sheets table exists with correct (new) schema
+    // Ensure user_sheets table exists with correct schema
     await context.env.DB.prepare(`
       CREATE TABLE IF NOT EXISTS user_sheets (
         email TEXT PRIMARY KEY,
@@ -57,13 +57,11 @@ export async function onRequestPost(context) {
       )
     `).run();
 
-    // Migrate older tables that predate these columns (ignore errors if they already exist)
+    // Migrate older tables that predate these columns
     for (const col of ['sync_status TEXT', 'last_synced_at TEXT', 'last_attempt_at TEXT', 'last_error TEXT']) {
       try { await context.env.DB.prepare(`ALTER TABLE user_sheets ADD COLUMN ${col}`).run(); } catch {}
     }
 
-    // Look up the previous state so a FAILED attempt never wipes out a
-    // previously-good sheet URL / last-success timestamp
     let prevSheetUrl = null, prevSyncedAt = null;
     try {
       const prev = await context.env.DB.prepare(
@@ -100,11 +98,6 @@ export async function onRequestPost(context) {
       lastError = 'GOOGLE_SCRIPT_URL not configured';
     }
 
-    // last_synced_at only advances on a SUCCESSFUL sync — a failed retry
-    // never overwrites the last known-good time, and because every save
-    // sends the FULL current state (not a delta), the very next successful
-    // sync automatically catches the sheet up on everything that piled up
-    // while it was failing — nothing needs a separate backfill.
     const lastSyncedAt = syncStatus === 'success' ? nowIso : prevSyncedAt;
 
     await context.env.DB.prepare(
